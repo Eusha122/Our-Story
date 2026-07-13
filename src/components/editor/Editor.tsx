@@ -1487,10 +1487,10 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
               <TypeIcon size={17} /> Text
             </button>
             <button onClick={addEnvelope} className={`${tb(false)} gap-1.5 px-3`} title="Interactive Envelope">
-              💌 Env
+              Env
             </button>
             <button onClick={addMap} className={`${tb(false)} gap-1.5 px-3`} title="Map Pin">
-              📍 Map
+              Map
             </button>
             <span className="w-px h-7 bg-hairline mx-1 shrink-0" />
             {SHAPES.map((s) => {
@@ -2697,7 +2697,6 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                       onClick={() => { addEnvelope(); setFabOpen(false); }}
                       className="flex flex-col items-center gap-1.5 py-3 rounded-xl border border-hairline text-xs hover:border-accent hover:text-accent transition-colors"
                     >
-                      <span className="text-xl leading-none">💌</span>
                       Envelope
                     </button>
                     {/* Map */}
@@ -2705,7 +2704,6 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                       onClick={() => { addMap(); setFabOpen(false); }}
                       className="flex flex-col items-center gap-1.5 py-3 rounded-xl border border-hairline text-xs hover:border-accent hover:text-accent transition-colors"
                     >
-                      <span className="text-xl leading-none">📍</span>
                       Map
                     </button>
                     {/* Shapes */}

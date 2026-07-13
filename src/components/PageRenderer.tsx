@@ -577,202 +577,434 @@ function AudioBody({ el }: { el: AudioElement }) {
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
+// Rose/cream envelope palette — deep enough contrast to read clearly as
+// folded paper, without leaving the app's blush theme.
+const ENV_FRONT = "#c98a92"; // lighter flap face
+const ENV_BODY = "#b76e79"; // main body / back-fold
+const ENV_CREASE = "#9c5c66"; // shaded crease / side-folds
+
+type EnvPhase = "closed" | "opening" | "reading" | "closing";
+
 function EnvelopeBody({ el, animate }: { el: EnvelopeElement; animate: boolean }) {
-  // closed -> open (flap lifts, card peeks) -> reading (fullscreen)
-  const [phase, setPhase] = useState<"closed" | "open" | "reading">("closed");
+  // One continuous choreography per tap:
+  //   closed -> opening (seal cracks, flap swings behind, letter rises)
+  //          -> reading (letter flies from its on-screen spot to fullscreen)
+  //   close  -> closing (letter flies back, tucks in, flap folds, seal returns)
+  //          -> closed
+  const [phase, setPhase] = useState<EnvPhase>("closed");
+  // Mid-rotation the flap drops behind the letter, like real paper.
+  const [flapBehind, setFlapBehind] = useState(false);
   const [showBack, setShowBack] = useState(false);
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const [imgFailed, setImgFailed] = useState(false);
+  // Where the fullscreen card flies from/to (letter's real screen position).
+  const [flyFrom, setFlyFrom] = useState<{ x: number; y: number; scale: number } | null>(null);
+  const letterRef = useRef<HTMLDivElement>(null);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  const paper = el.envelopeColor || "#fdf9f4";
-  const hasPhoto = !!el.envelopeSrc;
+  useEffect(() => setMounted(true), []);
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  
+  useEffect(() => {
+    if (phase === "reading" && !!el.envelopeSrc && !!el.envelopeText && !imgFailed && !showBack) {
+      const t = setTimeout(() => {
+        setShowBack(true);
+      }, 3000);
+      return () => clearTimeout(t);
+    }
+  }, [phase, el.envelopeSrc, el.envelopeText, imgFailed, showBack]);
+
+  const later = (fn: () => void, ms: number) => timers.current.push(setTimeout(fn, ms));
+
+  const hasPhoto = !!el.envelopeSrc && !imgFailed;
   const hasText = !!el.envelopeText;
   const backColor = el.cardBackColor || "#ffffff";
+  const tucked = phase === "closed" || phase === "closing";
 
-  const close = () => {
-    setPhase("closed");
-    setShowBack(false);
+  const open = () => {
+    if (phase !== "closed") return;
+    setPhase("opening");
+    later(() => setFlapBehind(true), 600); // flap passes edge-on (~90° of its ~124° swing)
+    later(() => {
+      const r = letterRef.current?.getBoundingClientRect();
+      if (r) {
+        const cardW = Math.min(448, window.innerWidth - 48);
+        setFlyFrom({
+          x: r.left + r.width / 2 - window.innerWidth / 2,
+          y: r.top + r.height / 2 - window.innerHeight / 2,
+          scale: Math.max(0.08, r.width / cardW),
+        });
+      } else {
+        setFlyFrom(null);
+      }
+      setPhase("reading");
+    }, 1300);
   };
 
-  const letterFace = (bg: string) => (
+  const close = () => {
+    if (phase !== "reading") return;
+    setShowBack(false);
+    setPhase("closing");
+    later(() => setFlapBehind(false), 1140); // flap swings back past edge-on, over the letter
+    later(() => setPhase("closed"), 1750);
+  };
+
+  const letterFace = (bg: string, isBack: boolean = false) => (
     <div className="w-full h-full flex items-center justify-center p-10" style={{ background: bg }}>
       {hasText ? (
-        <p
-          className="text-center whitespace-pre-wrap"
+        <motion.p
+          className="text-center whitespace-pre-wrap drop-shadow-sm"
           style={{
             fontFamily: "var(--font-elegant), Georgia, serif",
             fontSize: "clamp(1.05rem, 3.2vw, 1.4rem)",
             lineHeight: 1.75,
             color: "#3a332c",
           }}
+          initial={{ opacity: isBack ? 0 : 1, y: isBack ? 15 : 0, scale: isBack ? 0.95 : 1 }}
+          animate={{ 
+            opacity: (!isBack || showBack) ? 1 : 0, 
+            y: (!isBack || showBack) ? 0 : 15,
+            scale: (!isBack || showBack) ? 1 : 0.95
+          }}
+          transition={{ duration: 0.6, delay: isBack ? 0.5 : 0, ease: EASE }}
         >
           {el.envelopeText}
-        </p>
+        </motion.p>
       ) : (
         <p className="text-ink-soft italic text-sm" style={{ fontFamily: "var(--font-elegant), Georgia, serif" }}>
-          This envelope is empty.
+          This envelope is empty — add a letter or a photo in the editor.
         </p>
       )}
     </div>
   );
 
   const portal =
-    phase === "reading" && mounted
+    mounted && (phase === "reading" || phase === "closing")
       ? createPortal(
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.4, ease: EASE }}
+          <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-6"
-            style={{ background: "rgba(43,38,32,0.32)", backdropFilter: "blur(16px)" }}
+            style={{ pointerEvents: phase === "reading" ? "auto" : "none" }}
             onClick={close}
           >
             <motion.div
-              initial={{ opacity: 0, y: 26, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: 0.5, ease: EASE }}
+              className="absolute inset-0"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: phase === "reading" ? 1 : 0 }}
+              transition={{ duration: 0.45, ease: EASE }}
+              style={{ background: "rgba(0, 0, 0, 0.4)", backdropFilter: "blur(20px)" }}
+            />
+            <motion.div
               className="relative w-full max-w-md"
               onClick={(e) => e.stopPropagation()}
+              initial={
+                flyFrom
+                  ? { x: flyFrom.x, y: flyFrom.y, scale: flyFrom.scale, opacity: 1 }
+                  : { opacity: 0, scale: 0.92 }
+              }
+              animate={
+                phase === "reading"
+                  ? { x: 0, y: 0, scale: 1, opacity: 1 }
+                  : flyFrom
+                  ? { x: flyFrom.x, y: flyFrom.y, scale: flyFrom.scale, opacity: 0 }
+                  : { opacity: 0, scale: 0.9 }
+              }
+              transition={{
+                duration: 0.55,
+                ease: EASE,
+                // When flying home, land first, then hand off to the letter.
+                opacity:
+                  phase === "closing" ? { delay: 0.42, duration: 0.18 } : { duration: 0.3 },
+              }}
             >
-              <button
+              <motion.button
                 onClick={close}
                 aria-label="Close"
+                animate={{ opacity: phase === "reading" ? 1 : 0 }}
+                transition={{ duration: 0.25 }}
                 className="absolute -top-3 -right-3 z-10 w-9 h-9 rounded-full bg-white border flex items-center justify-center text-[#8a8178] hover:text-[#b76e79] transition-colors"
                 style={{ borderColor: "#ece7e0", boxShadow: "0 6px 20px rgba(43,38,32,0.18)" }}
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                   <path d="M6 6l12 12M18 6L6 18" />
                 </svg>
-              </button>
+              </motion.button>
 
               <div style={{ perspective: 1800 }}>
+                {/* Clipping wrapper: rounded corners live here, and only
+                    here. Mixing overflow-hidden with the 3D flip on the
+                    same element is what was rendering a face as solid
+                    black — browsers can't reliably do both on one box. */}
                 <div
                   className="relative w-full rounded-2xl overflow-hidden"
-                  style={{
-                    transformStyle: "preserve-3d",
-                    transition: "transform 0.75s cubic-bezier(0.22,1,0.36,1)",
-                    transform: showBack ? "rotateY(180deg)" : "rotateY(0deg)",
-                    minHeight: hasPhoto ? 380 : 300,
-                    boxShadow: "0 24px 60px rgba(43,38,32,0.22)",
-                  }}
+                  style={{ height: hasPhoto ? 380 : 320, boxShadow: "0 24px 60px rgba(43,38,32,0.22)" }}
                 >
-                  <div className="absolute inset-0 bg-white" style={{ backfaceVisibility: "hidden" }}>
-                    {hasPhoto ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={el.envelopeSrc} alt="" className="w-full h-full object-cover" style={{ minHeight: 380 }} />
-                    ) : (
-                      letterFace("#ffffff")
+                  {/* Flip wrapper: the actual 3D rotation, no clipping here. */}
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      transformStyle: "preserve-3d",
+                      transition: "transform 0.75s cubic-bezier(0.22,1,0.36,1)",
+                      transform: showBack ? "rotateY(180deg)" : "rotateY(0deg)",
+                    }}
+                  >
+                    <div className="absolute inset-0 bg-white" style={{ backfaceVisibility: "hidden" }}>
+                      {hasPhoto ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={el.envelopeSrc}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          onError={() => setImgFailed(true)}
+                        />
+                      ) : (
+                        letterFace("#ffffff")
+                      )}
+                    </div>
+                    {hasPhoto && (
+                      <div
+                        className="absolute inset-0"
+                        style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)", background: backColor }}
+                      >
+                        {letterFace(backColor, true)}
+                      </div>
                     )}
                   </div>
-                  {hasPhoto && (
-                    <div className="absolute inset-0" style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}>
-                      {letterFace(backColor)}
-                    </div>
-                  )}
                 </div>
               </div>
 
-              {hasPhoto && hasText && (
-                <button
-                  onClick={() => setShowBack((s) => !s)}
-                  className="mx-auto mt-4 flex items-center gap-2 text-xs tracking-[0.15em] uppercase text-[#8a8178] hover:text-[#b76e79] transition-colors"
-                >
-                  {showBack ? "‹  Back to the photo" : "Turn the card over  ›"}
-                </button>
-              )}
+
+
+              {/* Exit prompt */}
+              <motion.div 
+                className="absolute -bottom-10 left-0 right-0 text-center text-white/80 font-sans tracking-[0.2em] text-[11px] uppercase pointer-events-none drop-shadow-md"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: (phase === "reading" && (!hasPhoto || !hasText || showBack)) ? 1 : 0 }}
+                transition={{ duration: 0.6, delay: 0.3 }}
+              >
+                Click outside to exit
+              </motion.div>
             </motion.div>
-          </motion.div>,
+          </div>,
           document.body
         )
       : null;
 
+  // Per-phase timing so opening and closing each read as one motion.
+  const flapTransition =
+    phase === "opening"
+      ? { delay: 0.22, duration: 0.55, ease: EASE }
+      : phase === "closing"
+      ? { delay: 1.0, duration: 0.5, ease: EASE }
+      : { duration: 0.45, ease: EASE };
+
+  const letterTopTransition =
+    phase === "opening"
+      ? { delay: 0.66, duration: 0.6, ease: EASE }
+      : phase === "closing"
+      ? { delay: 0.6, duration: 0.55, ease: EASE }
+      : { duration: 0.4, ease: EASE };
+
+  const sealTransition =
+    phase === "closing"
+      ? { delay: 1.4, duration: 0.3, ease: EASE }
+      : { duration: 0.28, ease: EASE };
+
   return (
-    <div className="w-full h-full relative select-none" style={{ pointerEvents: animate ? "auto" : "none", perspective: 1400 }}>
+    <div
+      className="w-full h-full relative select-none"
+      style={{ pointerEvents: animate ? "auto" : "none", perspective: 1400 }}
+    >
+      {/* Clipped flush on the sides/bottom so nothing pokes out past the
+          envelope's own footprint, but wide open above so the letter can
+          actually rise out of it. */}
       <div
-        onClick={() => phase === "closed" && setPhase("open")}
-        className="absolute inset-0 overflow-hidden"
+        onClick={open}
+        className="absolute inset-0"
         style={{
-          background: paper,
-          border: "1px solid #ece7e0",
-          borderRadius: 6,
           cursor: phase === "closed" ? "pointer" : "default",
-          boxShadow: "0 10px 28px rgba(43,38,32,0.14)",
+          // Rounded to match the inner layers so no hairline seam shows at
+          // the corners; open above (-100%) so the letter can rise out.
+          clipPath: "inset(-100% 0px 0px 0px round 6px)",
+          // Perspective set right at the flap's parent (not just further up
+          // the tree) so its rotation actually foreshortens in 3D instead
+          // of rendering as a flat mirror-flip.
+          perspective: 1400,
+          transformStyle: "preserve-3d",
         }}
       >
-        {/* Subtle inner shadow where the flap meets the body, always present for depth */}
+        {/* Back panel — the inside of the envelope */}
         <div
-          className="absolute inset-x-0 top-0"
-          style={{
-            height: "56%",
-            background: "linear-gradient(180deg, rgba(43,38,32,0.05), transparent)",
-            clipPath: "polygon(0% 0%, 100% 0%, 50% 60%)",
-          }}
+          className="absolute inset-0"
+          style={{ background: ENV_BODY, borderRadius: 6, boxShadow: "0 10px 28px rgba(43,38,32,0.2)", zIndex: 0 }}
         />
 
-        {/* Card peeking out from the envelope */}
+        {/* The letter — hidden bottom tucked behind the front pocket, rises out on open */}
         <motion.div
-          className="absolute left-[8%] right-[8%] rounded-[3px] bg-white"
-          style={{ height: "68%", border: "1px solid #ece7e0", boxShadow: "0 3px 12px rgba(43,38,32,0.10)" }}
+          ref={letterRef}
+          className="absolute left-[8%] right-[8%] rounded-[3px] bg-white overflow-hidden"
+          style={{
+            height: "68%",
+            zIndex: 2,
+            // A soft shadow along the top edge sells the "tucked under the
+            // pocket fold" look and blends the seam instead of a hard cut.
+            boxShadow: "0 3px 14px rgba(43,38,32,0.25), inset 0 10px 12px -10px rgba(43,38,32,0.45)",
+          }}
           initial={false}
-          animate={{ top: phase === "closed" ? "40%" : "8%" }}
-          transition={{ duration: 0.55, ease: EASE }}
-          onClick={(e) => {
-            if (phase === "open") {
-              e.stopPropagation();
-              setPhase("reading");
-            }
+          animate={{ top: tucked ? "40%" : "-30%", opacity: phase === "reading" ? 0 : 1 }}
+          transition={{
+            top: letterTopTransition,
+            opacity:
+              phase === "reading"
+                ? { delay: 0.15, duration: 0.15 }
+                : { delay: 0.4, duration: 0.15 },
+          }}
+        >
+          {hasPhoto ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={el.envelopeSrc}
+              alt=""
+              className="w-full h-full object-cover"
+              draggable={false}
+              onError={() => setImgFailed(true)}
+            />
+          ) : (
+            <>
+              <div
+                className="h-[12%]"
+                style={{
+                  background: `repeating-linear-gradient(-45deg, ${ENV_BODY}, ${ENV_BODY} 6px, transparent 6px, transparent 13px)`,
+                }}
+              />
+              <div className="mt-[10%] ml-[6%] h-[7%] w-[45%] rounded-sm" style={{ background: ENV_BODY, opacity: 0.55 }} />
+              <div className="mt-[7%] ml-[6%] h-[7%] w-[25%] rounded-sm" style={{ background: ENV_BODY, opacity: 0.35 }} />
+              <div
+                className="absolute rounded-full"
+                style={{ right: "8%", top: "22%", width: "15%", paddingBottom: "15%", background: ENV_BODY, opacity: 0.25 }}
+              />
+            </>
+          )}
+        </motion.div>
+
+        {/* Front pocket — side + bottom folds that keep the letter tucked.
+            Each casts a soft shadow onto the layer behind it for real depth. */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: ENV_CREASE,
+            clipPath: "polygon(0% 0%, 0% 100%, 52% 50%)",
+            borderRadius: 6,
+            zIndex: 3,
+            filter: "drop-shadow(2px 0 3px rgba(43,38,32,0.18))",
+          }}
+        />
+        <div
+          className="absolute inset-0"
+          style={{
+            background: ENV_CREASE,
+            clipPath: "polygon(100% 0%, 100% 100%, 48% 50%)",
+            borderRadius: 6,
+            zIndex: 3,
+            filter: "drop-shadow(-2px 0 3px rgba(43,38,32,0.18))",
+          }}
+        />
+        <div
+          className="absolute inset-0"
+          style={{
+            background: "#aa6570",
+            clipPath: "polygon(0% 100%, 100% 100%, 50% 48%)",
+            borderRadius: 6,
+            zIndex: 3,
+            filter: "drop-shadow(0 -3px 5px rgba(43,38,32,0.2))",
           }}
         />
 
-        {/* Flap, hinged at the top edge */}
+        {/* Flap — hinged at the top edge. Swings open to a believable resting
+            angle (not a flat 180° mirror-flip) so it recedes in perspective
+            and settles behind the letter, the way real paper actually folds. */}
         <motion.div
           className="absolute inset-x-0 top-0"
           style={{
             height: "56%",
-            background: `linear-gradient(155deg, ${paper}, #f2ede6)`,
+            background: `linear-gradient(150deg, #d9a6ac 0%, ${ENV_FRONT} 38%, ${ENV_BODY} 100%)`,
             clipPath: "polygon(0% 0%, 100% 0%, 50% 100%)",
             transformOrigin: "top center",
-            borderBottom: "1px solid #ece7e0",
+            transformStyle: "preserve-3d",
+            borderRadius: "6px 6px 0 0",
+            zIndex: flapBehind ? 1 : 4,
+            filter: flapBehind
+              ? "drop-shadow(0 4px 8px rgba(43,38,32,0.25)) brightness(0.85)"
+              : "drop-shadow(0 8px 16px rgba(43,38,32,0.3))",
           }}
           initial={false}
-          animate={{ rotateX: phase === "closed" ? 0 : -155 }}
-          transition={{ duration: 0.5, ease: EASE }}
+          animate={{ rotateX: tucked ? 0 : -124 }}
+          transition={flapTransition}
         />
 
-        {/* Wax seal */}
-        {phase === "closed" && (
+        {/* Wax seal — cracks away the moment the envelope is tapped */}
+        <motion.div
+          className="absolute left-1/2 top-[27%] rounded-full"
+          style={{
+            width: "17%",
+            paddingBottom: "17%",
+            x: "-50%",
+            y: "-50%",
+            zIndex: 5,
+            background: "radial-gradient(circle at 35% 30%, #d59aa1, #8a4d56)",
+            boxShadow: "0 3px 10px rgba(90,45,52,0.45)",
+          }}
+          initial={false}
+          animate={{
+            scale: tucked ? 1 : 0.25,
+            opacity: tucked ? 1 : 0,
+            rotate: tucked ? 0 : 45,
+          }}
+          transition={sealTransition}
+        >
           <div
-            className="absolute left-1/2 top-[28%] -translate-x-1/2 -translate-y-1/2 rounded-full"
+            className="absolute inset-0"
             style={{
-              width: "17%",
-              paddingBottom: "17%",
-              background: "radial-gradient(circle at 35% 30%, #c98a92, #96525c)",
-              boxShadow: "0 3px 10px rgba(122,60,68,0.4)",
+              WebkitMaskImage: HEART_MASK,
+              maskImage: HEART_MASK,
+              WebkitMaskSize: "40% 40%",
+              maskSize: "40% 40%",
+              WebkitMaskRepeat: "no-repeat",
+              maskRepeat: "no-repeat",
+              WebkitMaskPosition: "center",
+              maskPosition: "center",
+              background: "#fdf1ee",
             }}
-          >
-            <div
-              className="absolute inset-0"
-              style={{
-                WebkitMaskImage: HEART_MASK,
-                maskImage: HEART_MASK,
-                WebkitMaskSize: "40% 40%",
-                maskSize: "40% 40%",
-                WebkitMaskRepeat: "no-repeat",
-                maskRepeat: "no-repeat",
-                WebkitMaskPosition: "center",
-                maskPosition: "center",
-                background: "#fdf1ee",
-              }}
-            />
-          </div>
-        )}
+          />
+        </motion.div>
       </div>
 
-      {phase === "closed" && (
-        <div className="absolute inset-x-0 -bottom-6 text-center pointer-events-none">
-          <span className="label-caps">Tap to open</span>
-        </div>
-      )}
+      {/* Soft ground shadow that eases as the letter lifts away */}
+      <motion.div
+        className="absolute left-1/2 pointer-events-none"
+        style={{
+          bottom: "-8%",
+          width: "70%",
+          height: "10%",
+          x: "-50%",
+          background: "radial-gradient(rgba(43,38,32,0.22), rgba(43,38,32,0) 70%)",
+        }}
+        initial={false}
+        animate={{ scaleX: tucked ? 1 : 0.72, opacity: tucked ? 1 : 0.65 }}
+        transition={{ duration: 0.6, ease: EASE }}
+      />
+
+      <motion.div
+        className="absolute inset-x-0 -bottom-6 text-center pointer-events-none"
+        initial={false}
+        animate={{ opacity: phase === "closed" ? 1 : 0, y: phase === "closed" ? [0, -4, 0] : 10 }}
+        transition={
+          phase === "closed" 
+            ? { y: { repeat: Infinity, duration: 2, ease: "easeInOut" }, opacity: { duration: 0.3 } } 
+            : { duration: 0.3 }
+        }
+      >
+        <span className="label-caps px-3 py-1.5 bg-white/80 rounded-full shadow-sm">Tap to open</span>
+      </motion.div>
 
       {portal}
     </div>
