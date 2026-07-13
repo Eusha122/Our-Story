@@ -57,3 +57,24 @@ body {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* ---- Page background effects (glow / hearts / sparkles / bokeh) ---- */
+
+@keyframes os-drift-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(90px, 60px) scale(1.18); }
+}
+@keyframes os-drift-b {
+  0%, 100% { transform: translate(0, 0) scale(1.1); }
+  50% { transform: translate(-80px, -50px) scale(0.94); }
+}
+@keyframes os-float-up {
+  0% { transform: translateY(0) rotate(0deg); opacity: 0; }
+  8% { opacity: 0.5; }
+  85% { opacity: 0.3; }
+  100% { transform: translateY(-1650px) rotate(18deg); opacity: 0; }
+}
+@keyframes os-twinkle {
+  0%, 100% { opacity: 0; transform: scale(0.45); }
+  50% { opacity: 0.9; transform: scale(1); }
+}

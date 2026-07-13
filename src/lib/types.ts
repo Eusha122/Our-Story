@@ -161,8 +161,20 @@ export interface StickerElement extends ElementBase {
 
 export type PageElement = PhotoElement | TextElement | StickerElement | ShapeElement;
 
+/** Animated ambient layer rendered behind the page's elements. */
+export type PageEffect = "none" | "glow" | "hearts" | "sparkles" | "bokeh";
+
+export const PAGE_EFFECTS: { value: PageEffect; label: string }[] = [
+  { value: "none", label: "None" },
+  { value: "glow", label: "Glow" },
+  { value: "hearts", label: "Floating hearts" },
+  { value: "sparkles", label: "Sparkles" },
+  { value: "bokeh", label: "Bokeh" },
+];
+
 export interface PageData {
   background: string; // any css background value (color or gradient)
+  effect?: PageEffect;
   elements: PageElement[];
 }
 

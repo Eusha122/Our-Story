@@ -5,6 +5,7 @@ import {
   PAGE_H,
   type EntranceAnim,
   type PageData,
+  type PageEffect,
   type PageElement,
   type PhotoElement,
   type PhotoFilter,
@@ -183,6 +184,129 @@ function ShapeBody({ el }: { el: ShapeElement }) {
   return <div className="w-full h-full" style={{ background: el.fill, borderRadius: el.radius ?? 0, border }} />;
 }
 
+/* ---- Ambient background effects ---- */
+
+const HEART_SPRITES = [
+  { left: "6%", size: 44, dur: 11, delay: 0 },
+  { left: "18%", size: 26, dur: 14, delay: 3 },
+  { left: "32%", size: 36, dur: 12, delay: 6 },
+  { left: "47%", size: 22, dur: 15, delay: 1.5 },
+  { left: "60%", size: 40, dur: 13, delay: 8 },
+  { left: "73%", size: 28, dur: 16, delay: 4 },
+  { left: "86%", size: 46, dur: 12, delay: 9 },
+  { left: "93%", size: 20, dur: 17, delay: 2 },
+];
+
+const SPARKLE_SPRITES = [
+  { left: "8%", top: "12%", size: 26, dur: 3.2, delay: 0 },
+  { left: "22%", top: "38%", size: 18, dur: 4.1, delay: 1.1 },
+  { left: "35%", top: "8%", size: 32, dur: 3.6, delay: 2.2 },
+  { left: "52%", top: "26%", size: 20, dur: 4.5, delay: 0.6 },
+  { left: "67%", top: "14%", size: 28, dur: 3.9, delay: 1.8 },
+  { left: "82%", top: "34%", size: 22, dur: 3.4, delay: 2.9 },
+  { left: "14%", top: "68%", size: 24, dur: 4.2, delay: 0.9 },
+  { left: "44%", top: "58%", size: 18, dur: 3.7, delay: 2.5 },
+  { left: "74%", top: "64%", size: 30, dur: 4.4, delay: 1.4 },
+  { left: "88%", top: "82%", size: 20, dur: 3.5, delay: 0.3 },
+  { left: "28%", top: "88%", size: 26, dur: 4.0, delay: 1.9 },
+  { left: "58%", top: "80%", size: 22, dur: 3.8, delay: 3.1 },
+];
+
+const BOKEH_SPRITES = [
+  { left: "4%", top: "10%", size: 190, color: "rgba(213,138,157,0.28)", anim: "os-drift-a 16s ease-in-out infinite" },
+  { left: "68%", top: "4%", size: 150, color: "rgba(240,217,168,0.30)", anim: "os-drift-b 19s ease-in-out infinite" },
+  { left: "80%", top: "42%", size: 220, color: "rgba(168,200,232,0.26)", anim: "os-drift-a 22s ease-in-out infinite" },
+  { left: "10%", top: "56%", size: 160, color: "rgba(203,179,224,0.26)", anim: "os-drift-b 18s ease-in-out infinite" },
+  { left: "42%", top: "74%", size: 200, color: "rgba(184,216,181,0.26)", anim: "os-drift-a 20s ease-in-out infinite" },
+  { left: "36%", top: "28%", size: 110, color: "rgba(245,179,184,0.30)", anim: "os-drift-b 15s ease-in-out infinite" },
+];
+
+function EffectLayer({ effect }: { effect: PageEffect }) {
+  if (effect === "glow") {
+    return (
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div
+          className="absolute"
+          style={{
+            width: 760, height: 760, left: -180, top: -160,
+            background: "radial-gradient(circle, rgba(213,138,157,0.34), transparent 65%)",
+            filter: "blur(48px)", animation: "os-drift-a 15s ease-in-out infinite",
+          }}
+        />
+        <div
+          className="absolute"
+          style={{
+            width: 680, height: 680, right: -160, bottom: -140,
+            background: "radial-gradient(circle, rgba(240,205,175,0.34), transparent 65%)",
+            filter: "blur(48px)", animation: "os-drift-b 19s ease-in-out infinite",
+          }}
+        />
+        <div
+          className="absolute"
+          style={{
+            width: 520, height: 520, left: "32%", top: "38%",
+            background: "radial-gradient(circle, rgba(203,179,224,0.24), transparent 65%)",
+            filter: "blur(52px)", animation: "os-drift-a 23s ease-in-out infinite",
+          }}
+        />
+      </div>
+    );
+  }
+  if (effect === "hearts") {
+    return (
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        {HEART_SPRITES.map((h, i) => (
+          <span
+            key={i}
+            className="absolute select-none"
+            style={{
+              left: h.left, bottom: -70, fontSize: h.size, color: "rgba(183,110,121,0.4)",
+              animation: `os-float-up ${h.dur}s linear ${h.delay}s infinite`,
+            }}
+          >
+            ♥
+          </span>
+        ))}
+      </div>
+    );
+  }
+  if (effect === "sparkles") {
+    return (
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        {SPARKLE_SPRITES.map((s, i) => (
+          <span
+            key={i}
+            className="absolute select-none"
+            style={{
+              left: s.left, top: s.top, fontSize: s.size, color: "rgba(201,162,39,0.75)",
+              animation: `os-twinkle ${s.dur}s ease-in-out ${s.delay}s infinite`,
+            }}
+          >
+            ✦
+          </span>
+        ))}
+      </div>
+    );
+  }
+  if (effect === "bokeh") {
+    return (
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        {BOKEH_SPRITES.map((b, i) => (
+          <div
+            key={i}
+            className="absolute rounded-full"
+            style={{
+              left: b.left, top: b.top, width: b.size, height: b.size,
+              background: b.color, filter: "blur(10px)", animation: b.anim,
+            }}
+          />
+        ))}
+      </div>
+    );
+  }
+  return null;
+}
+
 export function ElementBody({ el }: { el: PageElement }) {
   if (el.type === "photo") return <PhotoBody el={el} />;
   if (el.type === "text") return <TextBody el={el} />;
@@ -212,6 +336,7 @@ export default function PageRenderer({ data, animate = false }: { data: PageData
       className="relative overflow-hidden"
       style={{ width: PAGE_W, height: PAGE_H, background: data.background }}
     >
+      {data.effect && data.effect !== "none" && <EffectLayer effect={data.effect} />}
       {sorted.map((el, i) => {
         const entrance = animate && el.anim && el.anim !== "none" ? ENTRANCES[el.anim] : null;
         return (
