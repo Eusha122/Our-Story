@@ -588,10 +588,10 @@ function trackPointer(
   const startX = e.clientX;
   const startY = e.clientY;
   const move = (ev: PointerEvent) => onMove(ev.clientX - startX, ev.clientY - startY, ev);
-  const up = () => {
+  const up = (ev: PointerEvent) => {
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", up);
-    onEnd?.();
+    onEnd?.(ev);
   };
   window.addEventListener("pointermove", move);
   window.addEventListener("pointerup", up);
@@ -620,6 +620,8 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [adjustingId, setAdjustingId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; elId: string | null } | null>(null);
   // Replays an entrance animation on the canvas; nonce forces a remount.
   const [animPreview, setAnimPreview] = useState<{ id: string; anim: EntranceAnim; nonce: number } | null>(null);
   const [versions, setVersions] = useState<PageVersion[] | null>(null);
@@ -1192,13 +1194,67 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
       setSelectedId(el.id);
       if (editingTextId === el.id) return;
       const { x, y } = el;
-      trackPointer(e, (dx, dy) => {
-        const s = scaleRef.current;
-        mutateElement(el.id, (cur) => ({ ...cur, x: x + dx / s, y: y + dy / s }));
-      });
+      trackPointer(
+        e,
+        (dx, dy) => {
+          const s = scaleRef.current;
+          mutateElement(el.id, (cur) => ({ ...cur, x: x + dx / s, y: y + dy / s }));
+        },
+        (ev) => {
+          // If the element is a photo, check if we dropped it over a shape!
+          if (el.type === "photo" && el.src) {
+            // Temporarily hide the dragged photo so it doesn't block the raycast
+            const draggedNode = document.getElementById(`el-${el.id}`);
+            if (draggedNode) draggedNode.style.pointerEvents = "none";
+            
+            const targetNode = document.elementFromPoint(ev.clientX, ev.clientY);
+            const shapeNode = targetNode?.closest("[data-shape-id]");
+            
+            if (draggedNode) draggedNode.style.pointerEvents = "auto";
+
+            if (shapeNode) {
+              const shapeId = shapeNode.getAttribute("data-shape-id");
+              if (shapeId && shapeId !== el.id) {
+                // Drop successful! Move src to shape and delete photo.
+                const photoSrc = el.src;
+                mutateData((d) => {
+                  let nextElements = d.elements.map(e => 
+                    e.id === shapeId && e.type === "shape" ? { ...e, src: photoSrc } : e
+                  );
+                  nextElements = nextElements.filter(e => e.id !== el.id);
+                  return { ...d, elements: nextElements };
+                });
+                setSelectedId(shapeId);
+              }
+            }
+          }
+        }
+      );
     },
     [editingTextId, mutateElement]
   );
+
+  const startAdjust = useCallback(
+    (e: React.PointerEvent, el: PageElement) => {
+      e.stopPropagation();
+      const startCropX = el.cropX ?? 50;
+      const startCropY = el.cropY ?? 50;
+      trackPointer(e, (dx, dy) => {
+        const s = scaleRef.current;
+        const newCropX = Math.max(0, Math.min(100, startCropX - (dx / s / el.w) * 100 * 1.5));
+        const newCropY = Math.max(0, Math.min(100, startCropY - (dy / s / el.h) * 100 * 1.5));
+        mutateElement(el.id, (cur) => ({ ...cur, cropX: newCropX, cropY: newCropY }));
+      });
+    },
+    [mutateElement]
+  );
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, elId: string | null) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, elId });
+    if (elId) setSelectedId(elId);
+  }, []);
 
   const startResize = useCallback(
     (e: React.PointerEvent, el: PageElement, dir: "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se") => {
@@ -1544,7 +1600,14 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
         }}
       />
 
-      <div className="flex-1 flex flex-col md:flex-row min-h-0">
+      <div 
+        className="flex-1 flex flex-col md:flex-row min-h-0"
+        onClick={() => {
+          if (contextMenu) setContextMenu(null);
+          if (adjustingId) setAdjustingId(null);
+        }}
+        onContextMenu={(e) => handleContextMenu(e, null)}
+      >
         {/* Left Rail (Tabs) - Desktop only */}
         <nav className="w-16 hidden md:flex flex-col items-center py-4 gap-4 bg-ink text-paper/60 border-r border-hairline shrink-0">
           <button 
@@ -1728,12 +1791,18 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                       return (
                         <div
                           key={el.id}
+                          id={`el-${el.id}`}
+                          data-shape-id={el.type === "shape" ? el.id : undefined}
                           style={{ 
                             ...elementStyle(el), 
-                            cursor: isEditing ? "text" : "move",
+                            cursor: isEditing ? "text" : adjustingId === el.id ? "grab" : "move",
                             ...(el.type === "shape" && el.id === dragOverId ? { filter: "brightness(1.1) drop-shadow(0 0 8px rgba(0,0,0,0.3))", transform: "scale(1.02)", transition: "all 0.2s" } : {})
                           }}
-                          onPointerDown={(e) => startMove(e, el)}
+                          onPointerDown={(e) => {
+                            if (adjustingId === el.id) startAdjust(e, el);
+                            else startMove(e, el);
+                          }}
+                          onContextMenu={(e) => handleContextMenu(e, el.id)}
                           onDoubleClick={() => el.type === "text" && setEditingTextId(el.id)}
                           onDragOver={(e) => {
                             if (el.type === "shape" && e.dataTransfer.types.includes("application/vnd.ourstory.media")) {
@@ -2723,6 +2792,84 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
           </div>
         </div>
       )}
+
+      {/* Right Click Context Menu */}
+      {contextMenu && (
+        <>
+          <div 
+            className="fixed inset-0 z-[60]" 
+            onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
+            onClick={() => setContextMenu(null)}
+          />
+          <div 
+            className="fixed bg-paper shadow-2xl rounded-xl border border-hairline w-48 py-2 z-[70] text-sm overflow-hidden"
+            style={{ 
+              top: Math.min(contextMenu.y, window.innerHeight - 200), 
+              left: Math.min(contextMenu.x, window.innerWidth - 200) 
+            }}
+          >
+            {contextMenu.elId && selected ? (
+              <>
+                <div className="px-3 py-1 mb-1 label-caps border-b border-hairline pb-2">
+                  Edit {selected.type}
+                </div>
+                {(selected.type === "photo" || selected.type === "video" || (selected.type === "shape" && selected.src)) && (
+                  <button 
+                    onClick={() => { setAdjustingId(selected.id); setContextMenu(null); }}
+                    className="w-full text-left px-4 py-1.5 hover:bg-accent-soft hover:text-accent flex items-center justify-between"
+                  >
+                    Adjust Image <span>✏️</span>
+                  </button>
+                )}
+                <button 
+                  onClick={() => { reorderZ(1); setContextMenu(null); }}
+                  className="w-full text-left px-4 py-1.5 hover:bg-accent-soft hover:text-accent"
+                >
+                  Bring Forward
+                </button>
+                <button 
+                  onClick={() => { reorderZ(-1); setContextMenu(null); }}
+                  className="w-full text-left px-4 py-1.5 hover:bg-accent-soft hover:text-accent"
+                >
+                  Send Backward
+                </button>
+                <div className="my-1 border-t border-hairline" />
+                <button 
+                  onClick={() => { duplicateSelected(); setContextMenu(null); }}
+                  className="w-full text-left px-4 py-1.5 hover:bg-accent-soft hover:text-accent"
+                >
+                  Duplicate
+                </button>
+                <button 
+                  onClick={() => { removeSelected(); setContextMenu(null); }}
+                  className="w-full text-left px-4 py-1.5 text-red-500 hover:bg-red-50"
+                >
+                  Delete
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="px-3 py-1 mb-1 label-caps border-b border-hairline pb-2">
+                  Canvas
+                </div>
+                <button 
+                  onClick={() => { fileInput.current?.click(); setContextMenu(null); }}
+                  className="w-full text-left px-4 py-1.5 hover:bg-accent-soft hover:text-accent"
+                >
+                  Add Photo
+                </button>
+                <button 
+                  onClick={() => { addText(); setContextMenu(null); }}
+                  className="w-full text-left px-4 py-1.5 hover:bg-accent-soft hover:text-accent"
+                >
+                  Add Text
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      )}
+
     </div>
   );
 }

@@ -78,6 +78,19 @@ body {
   0%, 100% { opacity: 0; transform: scale(0.45); }
   50% { opacity: 0.9; transform: scale(1); }
 }
+@keyframes os-snow-fall {
+  0% { transform: translateY(0) rotate(0deg); }
+  100% { transform: translateY(1650px) rotate(360deg); }
+}
+@keyframes os-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+@keyframes os-gradient-pan {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
 
 /* ---- Mobile / device optimisations ---- */
 

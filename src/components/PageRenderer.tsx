@@ -305,6 +305,39 @@ const BOKEH_SPRITES = [
   { left: "36%", top: "28%", size: 110, color: "rgba(245,179,184,0.30)", anim: "os-drift-b 15s ease-in-out infinite" },
 ];
 
+const SNOW_SPRITES = Array.from({ length: 25 }).map((_, i) => ({
+  left: `${Math.random() * 100}%`,
+  size: 4 + Math.random() * 8,
+  dur: 6 + Math.random() * 10,
+  delay: Math.random() * -10,
+  opacity: 0.3 + Math.random() * 0.6,
+}));
+
+const BUBBLE_SPRITES = Array.from({ length: 15 }).map((_, i) => ({
+  left: `${Math.random() * 100}%`,
+  size: 10 + Math.random() * 30,
+  dur: 8 + Math.random() * 8,
+  delay: Math.random() * -10,
+}));
+
+const CONFETTI_SPRITES = Array.from({ length: 30 }).map((_, i) => ({
+  left: `${Math.random() * 100}%`,
+  size: 6 + Math.random() * 10,
+  dur: 4 + Math.random() * 6,
+  delay: Math.random() * -10,
+  color: ["#ff718d", "#fdff6a", "#7a5fff", "#5fffaa", "#ff8e5f"][i % 5],
+  rot: Math.random() * 360,
+  rotDur: 2 + Math.random() * 3,
+}));
+
+const STAR_SPRITES = Array.from({ length: 20 }).map((_, i) => ({
+  left: `${Math.random() * 100}%`,
+  top: `${Math.random() * 100}%`,
+  size: 1 + Math.random() * 3,
+  dur: 2 + Math.random() * 3,
+  delay: Math.random() * -5,
+}));
+
 function EffectLayer({ effect }: { effect: PageEffect }) {
   if (effect === "glow") {
     return (
@@ -388,6 +421,75 @@ function EffectLayer({ effect }: { effect: PageEffect }) {
       </div>
     );
   }
+  if (effect === "snow") {
+    return (
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        {SNOW_SPRITES.map((s, i) => (
+          <div
+            key={i}
+            className="absolute rounded-full bg-white"
+            style={{
+              left: s.left, top: -20, width: s.size, height: s.size, opacity: s.opacity,
+              animation: `os-snow-fall ${s.dur}s linear ${s.delay}s infinite`,
+            }}
+          />
+        ))}
+      </div>
+    );
+  }
+  if (effect === "bubbles") {
+    return (
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        {BUBBLE_SPRITES.map((b, i) => (
+          <div
+            key={i}
+            className="absolute rounded-full border border-white/40"
+            style={{
+              left: b.left, bottom: -40, width: b.size, height: b.size,
+              background: "radial-gradient(circle at 30% 30%, rgba(255,255,255,0.4), transparent)",
+              animation: `os-float-up ${b.dur}s ease-in ${b.delay}s infinite`,
+            }}
+          />
+        ))}
+      </div>
+    );
+  }
+  if (effect === "confetti") {
+    return (
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        {CONFETTI_SPRITES.map((c, i) => (
+          <div
+            key={i}
+            className="absolute"
+            style={{
+              left: c.left, top: -20, width: c.size, height: c.size * 1.5,
+              background: c.color,
+              animation: `os-snow-fall ${c.dur}s linear ${c.delay}s infinite`,
+            }}
+          >
+            <div style={{ width: "100%", height: "100%", animation: `os-spin ${c.rotDur}s linear infinite` }} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (effect === "stars") {
+    return (
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        {STAR_SPRITES.map((s, i) => (
+          <div
+            key={i}
+            className="absolute rounded-full bg-white"
+            style={{
+              left: s.left, top: s.top, width: s.size, height: s.size,
+              boxShadow: "0 0 4px 1px rgba(255,255,255,0.6)",
+              animation: `os-twinkle ${s.dur}s ease-in-out ${s.delay}s infinite`,
+            }}
+          />
+        ))}
+      </div>
+    );
+  }
   return null;
 }
 
@@ -416,9 +518,11 @@ export function ElementBody({ el }: { el: PageElement }) {
  */
 export default function PageRenderer({ data, animate = false }: { data: PageData; animate?: boolean }) {
   const sorted = [...data.elements].sort((a, b) => a.z - b.z);
+  const isAnimatedBg = data.background.includes("Animated");
+  
   return (
     <div
-      className="relative overflow-hidden"
+      className={`relative overflow-hidden ${isAnimatedBg ? "bg-[length:200%_200%] animate-[os-gradient-pan_8s_ease_infinite]" : ""}`}
       style={{ width: PAGE_W, height: PAGE_H, background: data.background }}
     >
       {data.effect && data.effect !== "none" && <EffectLayer effect={data.effect} />}

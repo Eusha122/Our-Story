@@ -184,7 +184,7 @@ export interface VideoElement extends ElementBase {
 export type PageElement = PhotoElement | TextElement | StickerElement | ShapeElement | VideoElement;
 
 /** Animated ambient layer rendered behind the page's elements. */
-export type PageEffect = "none" | "glow" | "hearts" | "sparkles" | "bokeh";
+export type PageEffect = "none" | "glow" | "hearts" | "sparkles" | "bokeh" | "snow" | "bubbles" | "confetti" | "stars";
 
 export const PAGE_EFFECTS: { value: PageEffect; label: string }[] = [
   { value: "none", label: "None" },
@@ -192,6 +192,10 @@ export const PAGE_EFFECTS: { value: PageEffect; label: string }[] = [
   { value: "hearts", label: "Floating hearts" },
   { value: "sparkles", label: "Sparkles" },
   { value: "bokeh", label: "Bokeh" },
+  { value: "snow", label: "Snow" },
+  { value: "bubbles", label: "Bubbles" },
+  { value: "confetti", label: "Confetti" },
+  { value: "stars", label: "Stars" },
 ];
 
 export interface PageData {
@@ -229,6 +233,15 @@ export const BACKGROUNDS: { value: string; label: string }[] = [
   { value: "linear-gradient(180deg, #fdf9f4, #f6e7e4)", label: "Sunset" },
   { value: "linear-gradient(180deg, #ffffff, #eef1f6)", label: "Sky" },
   { value: "radial-gradient(120% 120% at 50% 0%, #ffffff 45%, #f6e9ee)", label: "Glow" },
+  { value: "linear-gradient(270deg, #fbc2eb, #a6c1ee, #fbc2eb)", label: "Animated Pastel" },
+  { value: "linear-gradient(270deg, #ff9a9e, #fecfef, #ff9a9e)", label: "Animated Rose" },
+  { value: "linear-gradient(270deg, #ff758c, #ff7eb3, #ff758c)", label: "Animated Love" },
+  { value: "linear-gradient(270deg, #f77062, #fe5196, #f77062)", label: "Animated Passion" },
+  { value: "linear-gradient(270deg, #fa709a, #fee140, #fa709a)", label: "Animated Sunset Love" },
+  { value: "linear-gradient(270deg, #ff0844, #ffb199, #ff0844)", label: "Animated Romance" },
+  { value: "linear-gradient(270deg, #f43b47, #453a94, #f43b47)", label: "Animated Midnight" },
+  { value: "linear-gradient(270deg, #84fab0, #8fd3f4, #84fab0)", label: "Animated Mint" },
+  { value: "linear-gradient(270deg, #fdfbfb, #ebedee, #fdfbfb)", label: "Animated Cloud" },
 ];
 
 export function emptyPageData(): PageData {
