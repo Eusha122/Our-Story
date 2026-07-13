@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { nanoid } from "nanoid";
+import { motion } from "framer-motion";
 import {
   PAGE_W,
   PAGE_H,
@@ -12,20 +13,23 @@ import {
   ANIMS,
   PHOTO_FILTERS,
   SHAPES,
+  HIGHLIGHT_STYLES,
   type EntranceAnim,
+  type HighlightStyle,
   type Page,
   type PageData,
   type PageElement,
   type PageVersion,
+  type PhotoFilter,
   type PhotoFrame,
   type ShapeKind,
+  type TextFont,
   type Transition,
 } from "@/lib/types";
-import { motion } from "framer-motion";
 import PageRenderer, { ElementBody, elementStyle, FONT_MAP, ENTRANCES } from "@/components/PageRenderer";
 
 /* ------------------------------------------------------------------ */
-/* helpers                                                             */
+/* constants & helpers                                                 */
 /* ------------------------------------------------------------------ */
 
 type SaveState = "saved" | "dirty" | "saving" | "error";
@@ -42,19 +46,19 @@ const TEXT_COLORS = [
   "#7c8b6f", "#4a5a72", "#7d93b2", "#9b7bb8", "#c9a227", "#ffffff",
 ];
 
-const FRAMES: { value: PhotoFrame; label: string }[] = [
-  { value: "polaroid", label: "Polaroid" },
-  { value: "plain", label: "Plain" },
-  { value: "rounded", label: "Rounded" },
-  { value: "circle", label: "Circle" },
-];
-
 const FILL_COLORS = [
   "#f5e9ea", "#fde8ec", "#f2d8dd", "#b76e79", "#e8f0e9", "#dfe8f2",
   "#efe3f2", "#fff3cd", "#d6b18a", "#2b2620", "#8a8178", "#ffffff",
 ];
 
 const HIGHLIGHTS = ["#fde8ec", "#fff3cd", "#e8f4ea", "#e2ecf8", "#f3e8f8", "#ffffff"];
+
+const FRAMES: { value: PhotoFrame; label: string }[] = [
+  { value: "polaroid", label: "Polaroid" },
+  { value: "plain", label: "Plain" },
+  { value: "rounded", label: "Rounded" },
+  { value: "circle", label: "Circle" },
+];
 
 const SHAPE_DEFAULTS: Record<ShapeKind, { w: number; h: number; fill: string; radius?: number; opacity?: number; rotation?: number }> = {
   rect: { w: 420, h: 280, fill: "#f5e9ea", radius: 0 },
@@ -71,6 +75,13 @@ const SHAPE_ICONS: Record<ShapeKind, string> = {
   line: "—",
   tape: "▰",
 };
+
+const RAINBOW = "conic-gradient(#f5b3b8, #f0d9a8, #b8d8b5, #a8c8e8, #cbb3e0, #f5b3b8)";
+
+const selectCls =
+  "w-full border border-hairline rounded-md px-2 py-1.5 text-sm bg-paper text-ink outline-none focus:border-accent";
+const inputCls =
+  "w-full border border-hairline rounded-md px-2 py-1.5 text-sm outline-none focus:border-accent";
 
 function clamp(v: number, min: number, max: number) {
   return Math.min(Math.max(v, min), max);
@@ -105,6 +116,130 @@ function timeLabel(sqliteUtc: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+/* ------------------------------------------------------------------ */
+/* small UI pieces                                                     */
+/* ------------------------------------------------------------------ */
+
+function Section({
+  title,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-b border-hairline">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between py-2.5 label-caps hover:text-accent transition-colors"
+      >
+        <span>{title}</span>
+        <span className={`text-sm transition-transform ${open ? "rotate-90" : ""}`}>›</span>
+      </button>
+      {open && <div className="pb-4 space-y-3">{children}</div>}
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="text-xs text-ink-soft mb-1">{label}</div>
+      {children}
+    </div>
+  );
+}
+
+function Swatches({
+  colors,
+  current,
+  onPick,
+  customValue,
+  onCustom,
+  allowNone,
+  onNone,
+}: {
+  colors: string[];
+  current: string | undefined;
+  onPick: (c: string) => void;
+  customValue: string;
+  onCustom: (c: string) => void;
+  allowNone?: boolean;
+  onNone?: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5 items-center">
+      {allowNone && (
+        <button
+          onClick={onNone}
+          title="None"
+          className={`w-6 h-6 rounded-full border text-[10px] text-ink-soft ${
+            !current ? "ring-2 ring-accent ring-offset-1" : "border-hairline"
+          }`}
+        >
+          ✕
+        </button>
+      )}
+      {colors.map((c) => (
+        <button
+          key={c}
+          onClick={() => onPick(c)}
+          className={`w-6 h-6 rounded-full border ${
+            current === c ? "ring-2 ring-accent ring-offset-1" : "border-hairline"
+          }`}
+          style={{ background: c }}
+        />
+      ))}
+      <label
+        title="Custom color"
+        className="w-6 h-6 rounded-full border border-hairline cursor-pointer overflow-hidden relative"
+        style={{ background: RAINBOW }}
+      >
+        <input
+          type="color"
+          value={/^#[0-9a-fA-F]{6}$/.test(customValue) ? customValue : "#f5e9ea"}
+          onChange={(e) => onCustom(e.target.value)}
+          className="absolute inset-0 opacity-0 cursor-pointer"
+        />
+      </label>
+    </div>
+  );
+}
+
+function Slider({
+  label,
+  min,
+  max,
+  step = 1,
+  value,
+  onChange,
+}: {
+  label: string;
+  min: number;
+  max: number;
+  step?: number;
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div>
+      <div className="text-xs text-ink-soft mb-1">{label}</div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full accent-[#b76e79]"
+      />
+    </div>
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -440,24 +575,21 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
     [currentId, switchPage]
   );
 
-  const movePage = useCallback(
-    (id: string, dir: 1 | -1) => {
-      setPages((prev) => {
-        const i = prev.findIndex((p) => p.id === id);
-        const j = i + dir;
-        if (i < 0 || j < 0 || j >= prev.length) return prev;
-        const next = [...prev];
-        [next[i], next[j]] = [next[j], next[i]];
-        void fetch("/api/pages/order", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ids: next.map((p) => p.id) }),
-        });
-        return next;
+  const movePage = useCallback((id: string, dir: 1 | -1) => {
+    setPages((prev) => {
+      const i = prev.findIndex((p) => p.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      void fetch("/api/pages/order", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: next.map((p) => p.id) }),
       });
-    },
-    []
-  );
+      return next;
+    });
+  }, []);
 
   /* ---------------- history ---------------- */
 
@@ -541,6 +673,13 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
       });
     },
     [mutateElement]
+  );
+
+  const previewAnim = useCallback(
+    (id: string, anim: EntranceAnim) => {
+      setAnimPreview((p) => (anim === "none" ? null : { id, anim, nonce: (p?.nonce ?? 0) + 1 }));
+    },
+    []
   );
 
   const saveLabel = useMemo(() => {
@@ -739,12 +878,10 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
         </main>
 
         {/* Inspector */}
-        <aside className="md:w-72 shrink-0 bg-paper border-t md:border-t-0 md:border-l border-hairline p-4 overflow-y-auto space-y-6">
-          {page && (
+        <aside className="md:w-72 shrink-0 bg-paper border-t md:border-t-0 md:border-l border-hairline px-4 pb-6 overflow-y-auto">
+          {page && !selected && (
             <>
-              {/* Add things */}
-              <section>
-                <div className="label-caps mb-2">Add to page</div>
+              <Section title="Add to page" defaultOpen>
                 <div className="flex gap-2">
                   <button
                     onClick={() => fileInput.current?.click()}
@@ -770,7 +907,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                     e.target.value = "";
                   }}
                 />
-                <div className="flex gap-1 mt-2">
+                <div className="flex gap-1">
                   {SHAPES.map((s) => (
                     <button
                       key={s.value}
@@ -782,558 +919,466 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                     </button>
                   ))}
                 </div>
-                <div className="flex flex-wrap gap-1 mt-2">
+                <div className="flex flex-wrap gap-1">
                   {STICKERS.map((s) => (
                     <button key={s} onClick={() => addSticker(s)} className="w-8 h-8 text-lg hover:scale-125 transition-transform">
                       {s}
                     </button>
                   ))}
                 </div>
-              </section>
+              </Section>
 
-              {/* Selected element */}
-              {selected ? (
-                <section className="space-y-4">
-                  <div className="label-caps">
-                    {selected.type === "photo"
-                      ? "Photo"
-                      : selected.type === "text"
-                      ? "Text"
-                      : selected.type === "shape"
-                      ? "Shape"
-                      : "Sticker"}{" "}
-                    selected
+              <Section title="Page" defaultOpen>
+                <Field label="Title">
+                  <input
+                    value={page.title}
+                    onChange={(e) => updateCurrentPage((p) => ({ ...p, title: e.target.value }))}
+                    className={inputCls}
+                  />
+                </Field>
+                <Field label="Transition (how this page enters)">
+                  <select
+                    value={page.transition}
+                    onChange={(e) => updateCurrentPage((p) => ({ ...p, transition: e.target.value as Transition }))}
+                    className={selectCls}
+                  >
+                    {TRANSITIONS.map((t) => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Background">
+                  <div className="flex flex-wrap gap-1.5">
+                    {BACKGROUNDS.map((b) => (
+                      <button
+                        key={b.value}
+                        title={b.label}
+                        onClick={() => mutateData((d) => ({ ...d, background: b.value }))}
+                        className={`w-7 h-7 rounded-full border ${
+                          page.data.background === b.value ? "ring-2 ring-accent ring-offset-1" : "border-hairline"
+                        }`}
+                        style={{ background: b.value }}
+                      />
+                    ))}
+                    <label
+                      title="Custom color"
+                      className="w-7 h-7 rounded-full border border-hairline cursor-pointer overflow-hidden relative"
+                      style={{ background: RAINBOW }}
+                    >
+                      <input
+                        type="color"
+                        value={/^#[0-9a-fA-F]{6}$/.test(page.data.background) ? page.data.background : "#ffffff"}
+                        onChange={(e) => mutateData((d) => ({ ...d, background: e.target.value }))}
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                      />
+                    </label>
                   </div>
+                </Field>
+                <p className="text-[11px] text-ink-soft leading-relaxed">
+                  Click any element on the canvas to style it. Drag to move, corners to resize,
+                  ⟳ to rotate. Everything autosaves.
+                </p>
+              </Section>
+            </>
+          )}
 
-                  {selected.type === "photo" && (
-                    <>
-                      <div>
+          {page && selected && (
+            <>
+              {/* Quick actions — always visible */}
+              <div className="flex items-center justify-between py-2.5 border-b border-hairline">
+                <span className="label-caps">
+                  {selected.type === "photo" ? "Photo" : selected.type === "text" ? "Text" : selected.type === "shape" ? "Shape" : "Sticker"}
+                </span>
+                <div className="flex gap-1">
+                  <button title="Bring to front" onClick={() => reorderZ(1)} className="w-7 h-7 text-xs border border-hairline rounded-md hover:border-accent hover:text-accent">⬆</button>
+                  <button title="Send to back" onClick={() => reorderZ(-1)} className="w-7 h-7 text-xs border border-hairline rounded-md hover:border-accent hover:text-accent">⬇</button>
+                  <button title="Duplicate" onClick={duplicateSelected} className="w-7 h-7 text-xs border border-hairline rounded-md hover:border-accent hover:text-accent">⧉</button>
+                  <button title="Straighten" onClick={() => mutateElement(selected.id, (el) => ({ ...el, rotation: 0 }))} className="w-7 h-7 text-xs border border-hairline rounded-md hover:border-accent hover:text-accent">⟲</button>
+                  <button title="Delete" onClick={removeSelected} className="w-7 h-7 text-xs border border-hairline rounded-md text-red-400 hover:border-red-400">🗑</button>
+                </div>
+              </div>
+
+              <Section title="Style" defaultOpen>
+                {selected.type === "photo" && (
+                  <>
+                    <div className="flex gap-2">
+                      <div className="flex-1">
                         <div className="text-xs text-ink-soft mb-1">Frame</div>
-                        <div className="grid grid-cols-2 gap-1">
+                        <select
+                          value={selected.frame}
+                          onChange={(e) => mutateElement(selected.id, (el) => el.type === "photo" ? { ...el, frame: e.target.value as PhotoFrame } : el)}
+                          className={selectCls}
+                        >
                           {FRAMES.map((f) => (
-                            <button
-                              key={f.value}
-                              onClick={() => mutateElement(selected.id, (el) => el.type === "photo" ? { ...el, frame: f.value } : el)}
-                              className={`text-xs border rounded-md py-1.5 transition-colors ${
-                                selected.frame === f.value ? "border-accent text-accent" : "border-hairline hover:border-ink-soft"
-                              }`}
-                            >
-                              {f.label}
-                            </button>
+                            <option key={f.value} value={f.value}>{f.label}</option>
                           ))}
-                        </div>
+                        </select>
                       </div>
-                      {selected.frame === "polaroid" && (
-                        <div>
-                          <div className="text-xs text-ink-soft mb-1">Caption</div>
-                          <input
-                            value={selected.caption ?? ""}
-                            onChange={(e) => mutateElement(selected.id, (el) => el.type === "photo" ? { ...el, caption: e.target.value } : el)}
-                            placeholder="11 july 2026 ♡"
-                            className="w-full border border-hairline rounded-md px-2 py-1.5 text-sm outline-none focus:border-accent"
-                          />
-                        </div>
-                      )}
-                      <div>
+                      <div className="flex-1">
                         <div className="text-xs text-ink-soft mb-1">Filter</div>
-                        <div className="grid grid-cols-4 gap-1">
+                        <select
+                          value={selected.filter ?? "none"}
+                          onChange={(e) => mutateElement(selected.id, (el) => el.type === "photo" ? { ...el, filter: e.target.value as PhotoFilter } : el)}
+                          className={selectCls}
+                        >
                           {PHOTO_FILTERS.map((f) => (
-                            <button
-                              key={f.value}
-                              onClick={() => mutateElement(selected.id, (el) => el.type === "photo" ? { ...el, filter: f.value } : el)}
-                              className={`text-[10px] border rounded-md py-1.5 transition-colors ${
-                                (selected.filter ?? "none") === f.value
-                                  ? "border-accent text-accent"
-                                  : "border-hairline hover:border-ink-soft"
-                              }`}
-                            >
-                              {f.label}
-                            </button>
+                            <option key={f.value} value={f.value}>{f.label}</option>
                           ))}
-                        </div>
+                        </select>
                       </div>
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => mutateElement(selected.id, (el) => el.type === "photo" ? { ...el, flip: !el.flip } : el)}
-                          className={`flex-1 text-xs border rounded-md py-1.5 ${selected.flip ? "border-accent text-accent" : "border-hairline hover:border-ink-soft"}`}
-                        >
-                          ⇋ Flip
-                        </button>
-                        <button
-                          onClick={() => mutateElement(selected.id, (el) => el.type === "photo" ? { ...el, shadow: el.shadow === false ? true : false } : el)}
-                          className={`flex-1 text-xs border rounded-md py-1.5 ${selected.shadow !== false ? "border-accent text-accent" : "border-hairline hover:border-ink-soft"}`}
-                        >
-                          Shadow
-                        </button>
-                      </div>
-                      {selected.frame !== "polaroid" && (
-                        <div>
-                          <div className="text-xs text-ink-soft mb-1">Border — {selected.borderW ?? 0}px</div>
-                          <input
-                            type="range"
-                            min={0}
-                            max={24}
-                            value={selected.borderW ?? 0}
-                            onChange={(e) => mutateElement(selected.id, (el) => el.type === "photo" ? { ...el, borderW: Number(e.target.value) } : el)}
-                            className="w-full accent-[#b76e79]"
-                          />
-                          {(selected.borderW ?? 0) > 0 && (
-                            <div className="flex gap-1.5 mt-1 items-center">
-                              {["#ffffff", "#2b2620", "#b76e79", "#f5e9ea", "#d6b18a"].map((c) => (
-                                <button
-                                  key={c}
-                                  onClick={() => mutateElement(selected.id, (el) => el.type === "photo" ? { ...el, borderColor: c } : el)}
-                                  className={`w-6 h-6 rounded-full border ${(selected.borderColor ?? "#ffffff") === c ? "ring-2 ring-accent ring-offset-1" : "border-hairline"}`}
-                                  style={{ background: c }}
-                                />
-                              ))}
-                              <label className="w-6 h-6 rounded-full border border-hairline cursor-pointer overflow-hidden relative" style={{ background: "conic-gradient(#f5b3b8, #f0d9a8, #b8d8b5, #a8c8e8, #cbb3e0, #f5b3b8)" }}>
-                                <input
-                                  type="color"
-                                  value={selected.borderColor ?? "#ffffff"}
-                                  onChange={(e) => mutateElement(selected.id, (el) => el.type === "photo" ? { ...el, borderColor: e.target.value } : el)}
-                                  className="absolute inset-0 opacity-0 cursor-pointer"
-                                />
-                              </label>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                  {selected.type === "shape" && (
-                    <>
-                      <div>
-                        <div className="text-xs text-ink-soft mb-1">Fill</div>
-                        <div className="flex flex-wrap gap-1.5 items-center">
-                          {FILL_COLORS.map((c) => (
-                            <button
-                              key={c}
-                              onClick={() => mutateElement(selected.id, (el) => el.type === "shape" ? { ...el, fill: c } : el)}
-                              className={`w-6 h-6 rounded-full border ${selected.fill === c ? "ring-2 ring-accent ring-offset-1" : "border-hairline"}`}
-                              style={{ background: c }}
-                            />
-                          ))}
-                          <label className="w-6 h-6 rounded-full border border-hairline cursor-pointer overflow-hidden relative" style={{ background: "conic-gradient(#f5b3b8, #f0d9a8, #b8d8b5, #a8c8e8, #cbb3e0, #f5b3b8)" }}>
-                            <input
-                              type="color"
-                              value={/^#[0-9a-fA-F]{6}$/.test(selected.fill) ? selected.fill : "#f5e9ea"}
-                              onChange={(e) => mutateElement(selected.id, (el) => el.type === "shape" ? { ...el, fill: e.target.value } : el)}
-                              className="absolute inset-0 opacity-0 cursor-pointer"
-                            />
-                          </label>
-                        </div>
-                      </div>
-                      {(selected.shape === "rect" || selected.shape === "tape") && (
-                        <div>
-                          <div className="text-xs text-ink-soft mb-1">Corner radius — {selected.radius ?? 0}px</div>
-                          <input
-                            type="range"
-                            min={0}
-                            max={200}
-                            value={selected.radius ?? 0}
-                            onChange={(e) => mutateElement(selected.id, (el) => el.type === "shape" ? { ...el, radius: Number(e.target.value) } : el)}
-                            className="w-full accent-[#b76e79]"
-                          />
-                        </div>
-                      )}
-                      {selected.shape !== "tape" && selected.shape !== "line" && (
-                        <div>
-                          <div className="text-xs text-ink-soft mb-1">Outline — {selected.borderW ?? 0}px</div>
-                          <input
-                            type="range"
-                            min={0}
-                            max={20}
-                            value={selected.borderW ?? 0}
-                            onChange={(e) => mutateElement(selected.id, (el) => el.type === "shape" ? { ...el, borderW: Number(e.target.value) } : el)}
-                            className="w-full accent-[#b76e79]"
-                          />
-                          {(selected.borderW ?? 0) > 0 && (
-                            <div className="flex gap-1.5 mt-1">
-                              {["#2b2620", "#b76e79", "#ffffff", "#8a8178"].map((c) => (
-                                <button
-                                  key={c}
-                                  onClick={() => mutateElement(selected.id, (el) => el.type === "shape" ? { ...el, borderColor: c } : el)}
-                                  className={`w-6 h-6 rounded-full border ${(selected.borderColor ?? "#2b2620") === c ? "ring-2 ring-accent ring-offset-1" : "border-hairline"}`}
-                                  style={{ background: c }}
-                                />
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                  {selected.type === "text" && (
-                    <>
-                      <div>
-                        <div className="text-xs text-ink-soft mb-1">Font</div>
-                        <div className="grid grid-cols-2 gap-1">
-                          {FONTS.map((f) => (
-                            <button
-                              key={f.value}
-                              onClick={() => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, font: f.value } : el)}
-                              className={`border rounded-md py-1.5 px-2 text-left transition-colors ${
-                                selected.font === f.value ? "border-accent text-accent" : "border-hairline hover:border-ink-soft"
-                              }`}
-                              style={{ fontFamily: FONT_MAP[f.value], fontSize: 15 }}
-                            >
-                              {f.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-ink-soft mb-1">Size — {selected.size}px</div>
+                    </div>
+                    {selected.frame === "polaroid" && (
+                      <Field label="Caption">
                         <input
-                          type="range"
-                          min={18}
-                          max={160}
-                          value={selected.size}
-                          onChange={(e) => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, size: Number(e.target.value) } : el)}
-                          className="w-full accent-[#b76e79]"
+                          value={selected.caption ?? ""}
+                          onChange={(e) => mutateElement(selected.id, (el) => el.type === "photo" ? { ...el, caption: e.target.value } : el)}
+                          placeholder="11 july 2026 ♡"
+                          className={inputCls}
                         />
-                      </div>
-                      <div>
-                        <div className="text-xs text-ink-soft mb-1">Color</div>
-                        <div className="flex flex-wrap gap-1.5 items-center">
-                          {TEXT_COLORS.map((c) => (
-                            <button
-                              key={c}
-                              onClick={() => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, color: c } : el)}
-                              className={`w-6 h-6 rounded-full border ${selected.color === c ? "ring-2 ring-accent ring-offset-1" : "border-hairline"}`}
-                              style={{ background: c }}
-                            />
-                          ))}
-                          <label
-                            title="Custom color"
-                            className="w-6 h-6 rounded-full border border-hairline cursor-pointer overflow-hidden relative"
-                            style={{
-                              background:
-                                "conic-gradient(#f5b3b8, #f0d9a8, #b8d8b5, #a8c8e8, #cbb3e0, #f5b3b8)",
-                            }}
-                          >
-                            <input
-                              type="color"
-                              value={selected.color}
-                              onChange={(e) => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, color: e.target.value } : el)}
-                              className="absolute inset-0 opacity-0 cursor-pointer"
-                            />
-                          </label>
-                        </div>
-                      </div>
-                      <div className="flex gap-1">
-                        {(["left", "center", "right"] as const).map((a) => (
-                          <button
-                            key={a}
-                            onClick={() => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, align: a } : el)}
-                            className={`flex-1 text-xs border rounded-md py-1.5 ${selected.align === a ? "border-accent text-accent" : "border-hairline"}`}
-                          >
-                            {a === "left" ? "⟸" : a === "center" ? "≡" : "⟹"}
-                          </button>
-                        ))}
-                        <button
-                          onClick={() => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, bold: !el.bold } : el)}
-                          className={`flex-1 text-xs border rounded-md py-1.5 font-bold ${selected.bold ? "border-accent text-accent" : "border-hairline"}`}
-                        >
-                          B
-                        </button>
-                        <button
-                          onClick={() => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, italic: !el.italic } : el)}
-                          className={`flex-1 text-xs border rounded-md py-1.5 italic ${selected.italic ? "border-accent text-accent" : "border-hairline"}`}
-                        >
-                          I
-                        </button>
-                      </div>
-                      <div className="flex gap-1">
-                        <button
-                          onClick={() => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, underline: !el.underline } : el)}
-                          className={`flex-1 text-xs border rounded-md py-1.5 underline ${selected.underline ? "border-accent text-accent" : "border-hairline"}`}
-                        >
-                          U
-                        </button>
-                        <button
-                          onClick={() => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, uppercase: !el.uppercase } : el)}
-                          className={`flex-1 text-xs border rounded-md py-1.5 tracking-widest ${selected.uppercase ? "border-accent text-accent" : "border-hairline"}`}
-                        >
-                          AA
-                        </button>
-                        <button
-                          onClick={() => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, shadow: !el.shadow } : el)}
-                          className={`flex-1 text-xs border rounded-md py-1.5 ${selected.shadow ? "border-accent text-accent" : "border-hairline"}`}
-                          style={{ textShadow: "0 2px 6px rgba(43,38,32,0.4)" }}
-                        >
-                          Shadow
-                        </button>
-                      </div>
-                      <div>
-                        <div className="text-xs text-ink-soft mb-1">Letter spacing — {selected.letterSpacing ?? 0}px</div>
-                        <input
-                          type="range"
+                      </Field>
+                    )}
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => mutateElement(selected.id, (el) => el.type === "photo" ? { ...el, flip: !el.flip } : el)}
+                        className={`flex-1 text-xs border rounded-md py-1.5 ${selected.flip ? "border-accent text-accent" : "border-hairline hover:border-ink-soft"}`}
+                      >
+                        ⇋ Flip
+                      </button>
+                      <button
+                        onClick={() => mutateElement(selected.id, (el) => el.type === "photo" ? { ...el, shadow: el.shadow === false ? true : false } : el)}
+                        className={`flex-1 text-xs border rounded-md py-1.5 ${selected.shadow !== false ? "border-accent text-accent" : "border-hairline hover:border-ink-soft"}`}
+                      >
+                        Shadow
+                      </button>
+                    </div>
+                    {selected.frame !== "polaroid" && (
+                      <>
+                        <Slider
+                          label={`Border — ${selected.borderW ?? 0}px`}
                           min={0}
-                          max={30}
-                          value={selected.letterSpacing ?? 0}
-                          onChange={(e) => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, letterSpacing: Number(e.target.value) } : el)}
-                          className="w-full accent-[#b76e79]"
+                          max={24}
+                          value={selected.borderW ?? 0}
+                          onChange={(v) => mutateElement(selected.id, (el) => el.type === "photo" ? { ...el, borderW: v } : el)}
                         />
-                      </div>
-                      <div>
-                        <div className="text-xs text-ink-soft mb-1">Line height — {(selected.lineHeight ?? 1.45).toFixed(2)}</div>
-                        <input
-                          type="range"
-                          min={0.9}
-                          max={2.4}
-                          step={0.05}
-                          value={selected.lineHeight ?? 1.45}
-                          onChange={(e) => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, lineHeight: Number(e.target.value) } : el)}
-                          className="w-full accent-[#b76e79]"
-                        />
-                      </div>
-                      <div>
-                        <div className="text-xs text-ink-soft mb-1">Highlight</div>
-                        <div className="flex flex-wrap gap-1.5 items-center">
-                          <button
-                            onClick={() => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, bg: undefined } : el)}
-                            className={`w-6 h-6 rounded-full border text-[10px] text-ink-soft ${!selected.bg ? "ring-2 ring-accent ring-offset-1" : "border-hairline"}`}
-                          >
-                            ✕
-                          </button>
-                          {HIGHLIGHTS.map((c) => (
-                            <button
-                              key={c}
-                              onClick={() => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, bg: c } : el)}
-                              className={`w-6 h-6 rounded-full border ${selected.bg === c ? "ring-2 ring-accent ring-offset-1" : "border-hairline"}`}
-                              style={{ background: c }}
-                            />
-                          ))}
-                          <label className="w-6 h-6 rounded-full border border-hairline cursor-pointer overflow-hidden relative" style={{ background: "conic-gradient(#f5b3b8, #f0d9a8, #b8d8b5, #a8c8e8, #cbb3e0, #f5b3b8)" }}>
-                            <input
-                              type="color"
-                              value={selected.bg && /^#[0-9a-fA-F]{6}$/.test(selected.bg) ? selected.bg : "#fde8ec"}
-                              onChange={(e) => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, bg: e.target.value } : el)}
-                              className="absolute inset-0 opacity-0 cursor-pointer"
-                            />
-                          </label>
-                        </div>
-                      </div>
-                      <p className="text-[11px] text-ink-soft">Double-click the text on the canvas to edit it.</p>
-                    </>
-                  )}
+                        {(selected.borderW ?? 0) > 0 && (
+                          <Swatches
+                            colors={["#ffffff", "#2b2620", "#b76e79", "#f5e9ea", "#d6b18a"]}
+                            current={selected.borderColor ?? "#ffffff"}
+                            onPick={(c) => mutateElement(selected.id, (el) => el.type === "photo" ? { ...el, borderColor: c } : el)}
+                            customValue={selected.borderColor ?? "#ffffff"}
+                            onCustom={(c) => mutateElement(selected.id, (el) => el.type === "photo" ? { ...el, borderColor: c } : el)}
+                          />
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
 
+                {selected.type === "text" && (
+                  <>
+                    <div className="flex gap-2">
+                      <div className="flex-[2]">
+                        <div className="text-xs text-ink-soft mb-1">Font</div>
+                        <select
+                          value={selected.font}
+                          onChange={(e) => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, font: e.target.value as TextFont } : el)}
+                          className={selectCls}
+                          style={{ fontFamily: FONT_MAP[selected.font] }}
+                        >
+                          {FONTS.map((f) => (
+                            <option key={f.value} value={f.value} style={{ fontFamily: FONT_MAP[f.value] }}>
+                              {f.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-xs text-ink-soft mb-1">Size</div>
+                        <input
+                          type="number"
+                          min={8}
+                          max={300}
+                          value={selected.size}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            if (!Number.isNaN(v)) mutateElement(selected.id, (el) => el.type === "text" ? { ...el, size: clamp(v, 8, 300) } : el);
+                          }}
+                          className={inputCls}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-1">
+                      {(
+                        [
+                          ["B", "bold", "font-bold"],
+                          ["I", "italic", "italic"],
+                          ["U", "underline", "underline"],
+                        ] as const
+                      ).map(([label, key, cls]) => (
+                        <button
+                          key={key}
+                          onClick={() => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, [key]: !el[key] } : el)}
+                          className={`flex-1 text-xs border rounded-md py-1.5 ${cls} ${selected[key] ? "border-accent text-accent" : "border-hairline"}`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, uppercase: !el.uppercase } : el)}
+                        className={`flex-1 text-xs border rounded-md py-1.5 tracking-widest ${selected.uppercase ? "border-accent text-accent" : "border-hairline"}`}
+                      >
+                        AA
+                      </button>
+                    </div>
+                    <div className="flex gap-1">
+                      {(["left", "center", "right"] as const).map((a) => (
+                        <button
+                          key={a}
+                          onClick={() => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, align: a } : el)}
+                          className={`flex-1 text-xs border rounded-md py-1.5 ${selected.align === a ? "border-accent text-accent" : "border-hairline"}`}
+                        >
+                          {a === "left" ? "⟸" : a === "center" ? "≡" : "⟹"}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, shadow: !el.shadow } : el)}
+                        className={`flex-1 text-xs border rounded-md py-1.5 ${selected.shadow ? "border-accent text-accent" : "border-hairline"}`}
+                        style={{ textShadow: "0 2px 6px rgba(43,38,32,0.4)" }}
+                      >
+                        Shadow
+                      </button>
+                    </div>
+                    <Field label="Color">
+                      <Swatches
+                        colors={TEXT_COLORS}
+                        current={selected.color}
+                        onPick={(c) => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, color: c } : el)}
+                        customValue={selected.color}
+                        onCustom={(c) => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, color: c } : el)}
+                      />
+                    </Field>
+                    <Slider
+                      label={`Letter spacing — ${selected.letterSpacing ?? 0}px`}
+                      min={0}
+                      max={30}
+                      value={selected.letterSpacing ?? 0}
+                      onChange={(v) => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, letterSpacing: v } : el)}
+                    />
+                    <Slider
+                      label={`Line height — ${(selected.lineHeight ?? 1.45).toFixed(2)}`}
+                      min={0.9}
+                      max={2.4}
+                      step={0.05}
+                      value={selected.lineHeight ?? 1.45}
+                      onChange={(v) => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, lineHeight: v } : el)}
+                    />
+                    <Field label="Highlight">
+                      <Swatches
+                        colors={HIGHLIGHTS}
+                        current={selected.bg}
+                        onPick={(c) => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, bg: c } : el)}
+                        customValue={selected.bg ?? "#fde8ec"}
+                        onCustom={(c) => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, bg: c } : el)}
+                        allowNone
+                        onNone={() => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, bg: undefined } : el)}
+                      />
+                    </Field>
+                    {selected.bg && (
+                      <Field label="Highlight shape">
+                        <select
+                          value={selected.bgStyle ?? "rounded"}
+                          onChange={(e) => mutateElement(selected.id, (el) => el.type === "text" ? { ...el, bgStyle: e.target.value as HighlightStyle } : el)}
+                          className={selectCls}
+                        >
+                          {HIGHLIGHT_STYLES.map((s) => (
+                            <option key={s.value} value={s.value}>{s.label}</option>
+                          ))}
+                        </select>
+                      </Field>
+                    )}
+                    <p className="text-[11px] text-ink-soft">Double-click the text on the canvas to edit it.</p>
+                  </>
+                )}
+
+                {selected.type === "shape" && (
+                  <>
+                    <Field label="Fill">
+                      <Swatches
+                        colors={FILL_COLORS}
+                        current={selected.fill}
+                        onPick={(c) => mutateElement(selected.id, (el) => el.type === "shape" ? { ...el, fill: c } : el)}
+                        customValue={selected.fill}
+                        onCustom={(c) => mutateElement(selected.id, (el) => el.type === "shape" ? { ...el, fill: c } : el)}
+                      />
+                    </Field>
+                    {(selected.shape === "rect" || selected.shape === "tape") && (
+                      <Slider
+                        label={`Corner radius — ${selected.radius ?? 0}px`}
+                        min={0}
+                        max={200}
+                        value={selected.radius ?? 0}
+                        onChange={(v) => mutateElement(selected.id, (el) => el.type === "shape" ? { ...el, radius: v } : el)}
+                      />
+                    )}
+                    {selected.shape !== "tape" && selected.shape !== "line" && (
+                      <>
+                        <Slider
+                          label={`Outline — ${selected.borderW ?? 0}px`}
+                          min={0}
+                          max={20}
+                          value={selected.borderW ?? 0}
+                          onChange={(v) => mutateElement(selected.id, (el) => el.type === "shape" ? { ...el, borderW: v } : el)}
+                        />
+                        {(selected.borderW ?? 0) > 0 && (
+                          <Swatches
+                            colors={["#2b2620", "#b76e79", "#ffffff", "#8a8178"]}
+                            current={selected.borderColor ?? "#2b2620"}
+                            onPick={(c) => mutateElement(selected.id, (el) => el.type === "shape" ? { ...el, borderColor: c } : el)}
+                            customValue={selected.borderColor ?? "#2b2620"}
+                            onCustom={(c) => mutateElement(selected.id, (el) => el.type === "shape" ? { ...el, borderColor: c } : el)}
+                          />
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
+
+                {selected.type === "sticker" && (
+                  <Field label="Swap emoji">
+                    <div className="flex flex-wrap gap-1">
+                      {STICKERS.map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => mutateElement(selected.id, (el) => el.type === "sticker" ? { ...el, emoji: s } : el)}
+                          className={`w-8 h-8 text-lg hover:scale-125 transition-transform ${selected.emoji === s ? "bg-accent-soft rounded-md" : ""}`}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </Field>
+                )}
+              </Section>
+
+              <Section title="Arrange">
+                <Slider
+                  label={`Opacity — ${Math.round((selected.opacity ?? 1) * 100)}%`}
+                  min={5}
+                  max={100}
+                  value={Math.round((selected.opacity ?? 1) * 100)}
+                  onChange={(v) => mutateElement(selected.id, (el) => ({ ...el, opacity: v / 100 }))}
+                />
+                <div className="grid grid-cols-4 gap-1">
+                  {(
+                    [
+                      ["X", "x"],
+                      ["Y", "y"],
+                      ["W", "w"],
+                      ["H", "h"],
+                    ] as const
+                  ).map(([label, key]) => (
+                    <label key={key} className="text-[10px] text-ink-soft">
+                      {label}
+                      <input
+                        type="number"
+                        value={Math.round(selected[key])}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          if (Number.isNaN(v)) return;
+                          mutateElement(selected.id, (el) => ({
+                            ...el,
+                            [key]: key === "w" || key === "h" ? Math.max(10, v) : v,
+                          }));
+                        }}
+                        className="w-full border border-hairline rounded-md px-1 py-1 text-xs text-ink outline-none focus:border-accent"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div className="flex gap-1 items-end">
+                  <label className="text-[10px] text-ink-soft flex-1">
+                    Angle
+                    <input
+                      type="number"
+                      value={Math.round(selected.rotation)}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        if (Number.isNaN(v)) return;
+                        mutateElement(selected.id, (el) => ({ ...el, rotation: v }));
+                      }}
+                      className="w-full border border-hairline rounded-md px-1 py-1 text-xs text-ink outline-none focus:border-accent"
+                    />
+                  </label>
+                  <button
+                    onClick={() => mutateElement(selected.id, (el) => ({ ...el, x: (PAGE_W - el.w) / 2 }))}
+                    className="flex-1 text-[10px] border border-hairline rounded-md py-1.5 hover:border-accent hover:text-accent"
+                    title="Center horizontally"
+                  >
+                    ↔ Center
+                  </button>
+                  <button
+                    onClick={() => mutateElement(selected.id, (el) => ({ ...el, y: (PAGE_H - el.h) / 2 }))}
+                    className="flex-1 text-[10px] border border-hairline rounded-md py-1.5 hover:border-accent hover:text-accent"
+                    title="Center vertically"
+                  >
+                    ↕ Center
+                  </button>
+                </div>
+              </Section>
+
+              <Section title="Animate">
+                <div className="flex gap-1 items-center">
+                  <select
+                    value={selected.anim ?? "none"}
+                    onChange={(e) => {
+                      const v = e.target.value as EntranceAnim;
+                      mutateElement(selected.id, (el) => ({ ...el, anim: v }));
+                      previewAnim(selected.id, v);
+                    }}
+                    className={selectCls}
+                  >
+                    {ANIMS.map((a) => (
+                      <option key={a.value} value={a.value}>{a.label}</option>
+                    ))}
+                  </select>
+                  {selected.anim && selected.anim !== "none" && (
+                    <button
+                      onClick={() => previewAnim(selected.id, selected.anim!)}
+                      title="Replay preview"
+                      className="shrink-0 w-9 h-9 border border-hairline rounded-md text-accent hover:border-accent"
+                    >
+                      ▶
+                    </button>
+                  )}
+                </div>
+                {selected.anim && selected.anim !== "none" && (
                   <div>
-                    <div className="text-xs text-ink-soft mb-1">
-                      Opacity — {Math.round((selected.opacity ?? 1) * 100)}%
+                    <div className="text-xs text-ink-soft mb-1 flex items-center justify-between">
+                      <span>
+                        Delay — {selected.animDelay === undefined ? "auto" : `${selected.animDelay.toFixed(1)}s`}
+                      </span>
+                      {selected.animDelay !== undefined && (
+                        <button
+                          onClick={() => mutateElement(selected.id, (el) => ({ ...el, animDelay: undefined }))}
+                          className="underline underline-offset-2 hover:text-accent"
+                        >
+                          auto
+                        </button>
+                      )}
                     </div>
                     <input
                       type="range"
-                      min={5}
-                      max={100}
-                      value={Math.round((selected.opacity ?? 1) * 100)}
-                      onChange={(e) => mutateElement(selected.id, (el) => ({ ...el, opacity: Number(e.target.value) / 100 }))}
+                      min={0}
+                      max={4}
+                      step={0.1}
+                      value={selected.animDelay ?? 0}
+                      onChange={(e) => mutateElement(selected.id, (el) => ({ ...el, animDelay: Number(e.target.value) }))}
                       className="w-full accent-[#b76e79]"
                     />
                   </div>
-
-                  <div>
-                    <div className="text-xs text-ink-soft mb-1">Position &amp; size</div>
-                    <div className="grid grid-cols-4 gap-1">
-                      {(
-                        [
-                          ["X", "x"],
-                          ["Y", "y"],
-                          ["W", "w"],
-                          ["H", "h"],
-                        ] as const
-                      ).map(([label, key]) => (
-                        <label key={key} className="text-[10px] text-ink-soft">
-                          {label}
-                          <input
-                            type="number"
-                            value={Math.round(selected[key])}
-                            onChange={(e) => {
-                              const v = Number(e.target.value);
-                              if (Number.isNaN(v)) return;
-                              mutateElement(selected.id, (el) => ({
-                                ...el,
-                                [key]: key === "w" || key === "h" ? Math.max(10, v) : v,
-                              }));
-                            }}
-                            className="w-full border border-hairline rounded-md px-1 py-1 text-xs text-ink outline-none focus:border-accent"
-                          />
-                        </label>
-                      ))}
-                    </div>
-                    <div className="flex gap-1 mt-1">
-                      <label className="text-[10px] text-ink-soft flex-1">
-                        Angle
-                        <input
-                          type="number"
-                          value={Math.round(selected.rotation)}
-                          onChange={(e) => {
-                            const v = Number(e.target.value);
-                            if (Number.isNaN(v)) return;
-                            mutateElement(selected.id, (el) => ({ ...el, rotation: v }));
-                          }}
-                          className="w-full border border-hairline rounded-md px-1 py-1 text-xs text-ink outline-none focus:border-accent"
-                        />
-                      </label>
-                      <button
-                        onClick={() => mutateElement(selected.id, (el) => ({ ...el, x: (PAGE_W - el.w) / 2 }))}
-                        className="flex-1 text-[10px] border border-hairline rounded-md mt-3.5 hover:border-accent hover:text-accent"
-                        title="Center horizontally"
-                      >
-                        ↔ Center
-                      </button>
-                      <button
-                        onClick={() => mutateElement(selected.id, (el) => ({ ...el, y: (PAGE_H - el.h) / 2 }))}
-                        className="flex-1 text-[10px] border border-hairline rounded-md mt-3.5 hover:border-accent hover:text-accent"
-                        title="Center vertically"
-                      >
-                        ↕ Center
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="text-xs text-ink-soft mb-1 flex items-center justify-between">
-                      <span>Entrance animation</span>
-                      {selected.anim && selected.anim !== "none" && (
-                        <button
-                          onClick={() =>
-                            setAnimPreview((p) => ({ id: selected.id, anim: selected.anim!, nonce: (p?.nonce ?? 0) + 1 }))
-                          }
-                          className="underline underline-offset-2 hover:text-accent"
-                        >
-                          ▶ replay
-                        </button>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-2 gap-1">
-                      {ANIMS.map((a) => (
-                        <button
-                          key={a.value}
-                          onClick={() => {
-                            mutateElement(selected.id, (el) => ({ ...el, anim: a.value as EntranceAnim }));
-                            setAnimPreview((p) =>
-                              a.value === "none" ? null : { id: selected.id, anim: a.value, nonce: (p?.nonce ?? 0) + 1 }
-                            );
-                          }}
-                          className={`text-xs border rounded-md py-1.5 transition-colors ${
-                            (selected.anim ?? "none") === a.value
-                              ? "border-accent text-accent"
-                              : "border-hairline hover:border-ink-soft"
-                          }`}
-                        >
-                          {a.label}
-                        </button>
-                      ))}
-                    </div>
-                    {selected.anim && selected.anim !== "none" && (
-                      <div className="mt-2">
-                        <div className="text-xs text-ink-soft mb-1 flex items-center justify-between">
-                          <span>
-                            Delay —{" "}
-                            {selected.animDelay === undefined ? "auto" : `${selected.animDelay.toFixed(1)}s`}
-                          </span>
-                          {selected.animDelay !== undefined && (
-                            <button
-                              onClick={() => mutateElement(selected.id, (el) => ({ ...el, animDelay: undefined }))}
-                              className="underline underline-offset-2 hover:text-accent"
-                            >
-                              auto
-                            </button>
-                          )}
-                        </div>
-                        <input
-                          type="range"
-                          min={0}
-                          max={4}
-                          step={0.1}
-                          value={selected.animDelay ?? 0}
-                          onChange={(e) => mutateElement(selected.id, (el) => ({ ...el, animDelay: Number(e.target.value) }))}
-                          className="w-full accent-[#b76e79]"
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex gap-1">
-                    <button onClick={() => reorderZ(1)} className="flex-1 text-xs border border-hairline rounded-md py-1.5 hover:border-accent hover:text-accent">Front</button>
-                    <button onClick={() => reorderZ(-1)} className="flex-1 text-xs border border-hairline rounded-md py-1.5 hover:border-accent hover:text-accent">Back</button>
-                    <button onClick={duplicateSelected} className="flex-1 text-xs border border-hairline rounded-md py-1.5 hover:border-accent hover:text-accent">Copy</button>
-                    <button onClick={removeSelected} className="flex-1 text-xs border border-hairline rounded-md py-1.5 text-red-400 hover:border-red-400">Delete</button>
-                  </div>
-                  <button
-                    onClick={() => mutateElement(selected.id, (el) => ({ ...el, rotation: 0 }))}
-                    className="w-full text-xs border border-hairline rounded-md py-1.5 hover:border-accent hover:text-accent"
-                  >
-                    Straighten (0°)
-                  </button>
-                </section>
-              ) : (
-                /* Page settings when nothing selected */
-                <section className="space-y-4">
-                  <div className="label-caps">Page settings</div>
-                  <div>
-                    <div className="text-xs text-ink-soft mb-1">Title</div>
-                    <input
-                      value={page.title}
-                      onChange={(e) => updateCurrentPage((p) => ({ ...p, title: e.target.value }))}
-                      className="w-full border border-hairline rounded-md px-2 py-1.5 text-sm outline-none focus:border-accent"
-                    />
-                  </div>
-                  <div>
-                    <div className="text-xs text-ink-soft mb-1">Transition (how this page enters)</div>
-                    <div className="grid grid-cols-3 gap-1">
-                      {TRANSITIONS.map((t) => (
-                        <button
-                          key={t.value}
-                          onClick={() => updateCurrentPage((p) => ({ ...p, transition: t.value as Transition }))}
-                          className={`text-xs border rounded-md py-1.5 transition-colors ${
-                            page.transition === t.value ? "border-accent text-accent" : "border-hairline hover:border-ink-soft"
-                          }`}
-                        >
-                          {t.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-ink-soft mb-1">Background</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {BACKGROUNDS.map((b) => (
-                        <button
-                          key={b.value}
-                          title={b.label}
-                          onClick={() => mutateData((d) => ({ ...d, background: b.value }))}
-                          className={`w-7 h-7 rounded-full border ${
-                            page.data.background === b.value ? "ring-2 ring-accent ring-offset-1" : "border-hairline"
-                          }`}
-                          style={{ background: b.value }}
-                        />
-                      ))}
-                      <label
-                        title="Custom color"
-                        className="w-7 h-7 rounded-full border border-hairline cursor-pointer overflow-hidden relative"
-                        style={{ background: "conic-gradient(#f5b3b8, #f0d9a8, #b8d8b5, #a8c8e8, #cbb3e0, #f5b3b8)" }}
-                      >
-                        <input
-                          type="color"
-                          value={/^#[0-9a-fA-F]{6}$/.test(page.data.background) ? page.data.background : "#ffffff"}
-                          onChange={(e) => mutateData((d) => ({ ...d, background: e.target.value }))}
-                          className="absolute inset-0 opacity-0 cursor-pointer"
-                        />
-                      </label>
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-ink-soft leading-relaxed">
-                    Click any photo, text, or sticker on the canvas to style it. Drag to move,
-                    corners to resize, the ⟳ handle to rotate. Everything autosaves.
-                  </p>
-                </section>
-              )}
+                )}
+                <p className="text-[11px] text-ink-soft">Plays when the page opens in the viewer.</p>
+              </Section>
             </>
           )}
         </aside>

@@ -99,6 +99,15 @@ function PhotoBody({ el }: { el: PhotoElement }) {
   );
 }
 
+const HIGHLIGHT_RADIUS: Record<string, string> = {
+  square: "0",
+  rounded: "0.35em",
+  pill: "1em",
+  ellipse: "50%",
+  // Irregular corners give a hand-drawn marker stroke feel.
+  marker: "0.5em 1.2em 0.6em 1em / 1em 0.5em 1.1em 0.6em",
+};
+
 function TextBody({ el }: { el: TextElement }) {
   return (
     <div
@@ -115,15 +124,27 @@ function TextBody({ el }: { el: TextElement }) {
         letterSpacing: el.letterSpacing ? `${el.letterSpacing}px` : undefined,
         lineHeight: el.lineHeight ?? 1.45,
         textShadow: el.shadow ? "0 2px 14px rgba(43,38,32,0.35)" : undefined,
-        background: el.bg || undefined,
-        padding: el.bg ? "0.1em 0.35em" : undefined,
-        borderRadius: el.bg ? 10 : undefined,
-        boxDecorationBreak: el.bg ? ("clone" as const) : undefined,
         whiteSpace: "pre-wrap",
         wordBreak: "break-word",
       }}
     >
-      {el.text}
+      {el.bg ? (
+        // The highlight lives on an inline span so it hugs each line of
+        // text (like a real marker) instead of filling the whole box.
+        <span
+          style={{
+            background: el.bg,
+            padding: "0.08em 0.4em",
+            borderRadius: HIGHLIGHT_RADIUS[el.bgStyle ?? "rounded"],
+            boxDecorationBreak: "clone",
+            WebkitBoxDecorationBreak: "clone",
+          }}
+        >
+          {el.text}
+        </span>
+      ) : (
+        el.text
+      )}
     </div>
   );
 }

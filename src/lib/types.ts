@@ -121,6 +121,16 @@ export const FONTS: { value: TextFont; label: string }[] = [
   { value: "type", label: "Typewriter" },
 ];
 
+export type HighlightStyle = "square" | "rounded" | "pill" | "ellipse" | "marker";
+
+export const HIGHLIGHT_STYLES: { value: HighlightStyle; label: string }[] = [
+  { value: "rounded", label: "Rounded" },
+  { value: "square", label: "Square" },
+  { value: "pill", label: "Pill" },
+  { value: "ellipse", label: "Ellipse" },
+  { value: "marker", label: "Marker" },
+];
+
 export interface TextElement extends ElementBase {
   type: "text";
   text: string;
@@ -138,6 +148,8 @@ export interface TextElement extends ElementBase {
   lineHeight?: number;
   /** Highlight background behind the text; empty/undefined = none. */
   bg?: string;
+  /** Shape of the highlight. */
+  bgStyle?: HighlightStyle;
   /** Soft drop shadow behind the letters. */
   shadow?: boolean;
 }
