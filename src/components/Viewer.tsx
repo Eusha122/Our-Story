@@ -28,10 +28,30 @@ const VARIANTS: Record<Transition, Variants> = {
     center: { rotateY: 0, opacity: 1 },
     exit: (dir: number) => ({ rotateY: dir > 0 ? -70 : 70, opacity: 0 }),
   },
+  flipup: {
+    enter: (dir: number) => ({ rotateX: dir > 0 ? -70 : 70, opacity: 0 }),
+    center: { rotateX: 0, opacity: 1 },
+    exit: (dir: number) => ({ rotateX: dir > 0 ? 70 : -70, opacity: 0 }),
+  },
   rise: {
     enter: { y: 90, opacity: 0 },
     center: { y: 0, opacity: 1 },
     exit: { y: -60, opacity: 0 },
+  },
+  blur: {
+    enter: { opacity: 0, filter: "blur(18px)" },
+    center: { opacity: 1, filter: "blur(0px)" },
+    exit: { opacity: 0, filter: "blur(18px)" },
+  },
+  spiral: {
+    enter: (dir: number) => ({ rotate: dir > 0 ? 9 : -9, scale: 0.7, opacity: 0 }),
+    center: { rotate: 0, scale: 1, opacity: 1 },
+    exit: (dir: number) => ({ rotate: dir > 0 ? -7 : 7, scale: 1.08, opacity: 0 }),
+  },
+  none: {
+    enter: { opacity: 0 },
+    center: { opacity: 1 },
+    exit: { opacity: 0 },
   },
 };
 
@@ -112,13 +132,16 @@ export default function Viewer({ pages }: { pages: Page[] }) {
           initial="enter"
           animate="center"
           exit="exit"
-          transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+          transition={{
+            duration: page.transition === "none" ? 0.01 : 0.55,
+            ease: [0.22, 1, 0.36, 1],
+          }}
           className="absolute inset-0 flex items-center justify-center"
         >
           <div style={{ width: PAGE_W * scale, height: PAGE_H * scale }}>
             <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
               <div className="shadow-[0_20px_60px_rgba(43,38,32,0.16)]">
-                <PageRenderer data={page.data} />
+                <PageRenderer data={page.data} animate />
               </div>
             </div>
           </div>

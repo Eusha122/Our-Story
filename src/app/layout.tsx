@@ -1,5 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Playfair_Display, Jost, Great_Vibes } from "next/font/google";
+import {
+  Playfair_Display,
+  Jost,
+  Great_Vibes,
+  Dancing_Script,
+  Caveat,
+  Cormorant_Garamond,
+  Courier_Prime,
+} from "next/font/google";
 import "./globals.css";
 
 const serif = Playfair_Display({
@@ -17,6 +25,29 @@ const script = Great_Vibes({
   variable: "--font-script",
   subsets: ["latin"],
   weight: "400",
+});
+
+const dancing = Dancing_Script({
+  variable: "--font-dancing",
+  subsets: ["latin"],
+});
+
+const hand = Caveat({
+  variable: "--font-hand",
+  subsets: ["latin"],
+});
+
+const elegant = Cormorant_Garamond({
+  variable: "--font-elegant",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  style: ["normal", "italic"],
+});
+
+const typewriter = Courier_Prime({
+  variable: "--font-type",
+  subsets: ["latin"],
+  weight: ["400", "700"],
 });
 
 export const metadata: Metadata = {
@@ -39,7 +70,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${serif.variable} ${sans.variable} ${script.variable} h-full antialiased`}
+      className={`${serif.variable} ${sans.variable} ${script.variable} ${dancing.variable} ${hand.variable} ${elegant.variable} ${typewriter.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>

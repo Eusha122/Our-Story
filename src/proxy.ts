@@ -13,7 +13,7 @@ function requiresAuth(pathname: string, method: string): boolean {
   return true;
 }
 
-export async function middleware(req: NextRequest) {
+export default async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   if (!requiresAuth(pathname, req.method)) return NextResponse.next();
 

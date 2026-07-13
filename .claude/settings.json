@@ -3,7 +3,22 @@
     "allow": [
       "PowerShell(node -v)",
       "PowerShell(npm -v)",
-      "PowerShell($src = \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\f--our-story\\\\dc59830c-ba47-45ec-8e75-863f0a0a6db9\\\\scratchpad\\\\our-story\"; Remove-Item \"$src\\\\.git\" -Recurse -Force; Get-ChildItem $src -Force | Move-Item -Destination \"f:\\\\our story\" -Force; Move-Item \"$env:TEMP\\\\ourstory-README.md\" \"f:\\\\our story\\\\README.md\" -Force; Get-ChildItem \"f:\\\\our story\" -Force | Select-Object Name)"
+      "PowerShell($src = \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\f--our-story\\\\dc59830c-ba47-45ec-8e75-863f0a0a6db9\\\\scratchpad\\\\our-story\"; Remove-Item \"$src\\\\.git\" -Recurse -Force; Get-ChildItem $src -Force | Move-Item -Destination \"f:\\\\our story\" -Force; Move-Item \"$env:TEMP\\\\ourstory-README.md\" \"f:\\\\our story\\\\README.md\" -Force; Get-ChildItem \"f:\\\\our story\" -Force | Select-Object Name)",
+      "PowerShell(Move-Item \"f:\\\\our story\\\\src\\\\middleware.ts\" \"f:\\\\our story\\\\src\\\\proxy.ts\")",
+      "Bash(seq 1 20)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/)",
+      "Bash(break)",
+      "Bash(sleep 1)",
+      "Bash(curl -sv -b /tmp/os_cookies.txt -X POST http://localhost:3100/api/images -F \"file=@/tmp/tiny.png;type=image/png\")",
+      "Bash(curl -v -b /tmp/os_cookies.txt -X POST http://localhost:3100/api/images -F \"file=@/tmp/tiny.png;type=image/png\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(curl -s -b /tmp/os_cookies.txt -X POST http://localhost:3100/api/images -F 'file=@C:/Users/user/AppData/Local/Temp/claude/f--our-story/dc59830c-ba47-45ec-8e75-863f0a0a6db9/scratchpad/tiny.png;type=image/png')",
+      "Bash(curl -s -o /dev/null -w '%{http_code}\\\\n' -X POST http://localhost:3100/api/images -F 'file=@C:/Users/user/AppData/Local/Temp/claude/f--our-story/dc59830c-ba47-45ec-8e75-863f0a0a6db9/scratchpad/tiny.png;type=image/png')",
+      "Bash(curl -s -o /dev/null -w \"%{http_code} %{content_type}\\\\n\" http://localhost:3100/api/images/ofrn8i5ScpdrBZey)",
+      "Bash(curl -sI http://localhost:3100/api/images/ofrn8i5ScpdrBZey)",
+      "Bash(curl -s http://localhost:3100/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3100/api/pages)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3100/login)"
     ]
   }
 }
