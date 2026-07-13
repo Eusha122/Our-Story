@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "PowerShell(node -v)",
-      "PowerShell(npm -v)"
+      "PowerShell(npm -v)",
+      "PowerShell($src = \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\f--our-story\\\\dc59830c-ba47-45ec-8e75-863f0a0a6db9\\\\scratchpad\\\\our-story\"; Remove-Item \"$src\\\\.git\" -Recurse -Force; Get-ChildItem $src -Force | Move-Item -Destination \"f:\\\\our story\" -Force; Move-Item \"$env:TEMP\\\\ourstory-README.md\" \"f:\\\\our story\\\\README.md\" -Force; Get-ChildItem \"f:\\\\our story\" -Force | Select-Object Name)"
     ]
   }
 }
