@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { nanoid } from "nanoid";
-import { extForMime, saveMedia } from "@/lib/db";
+import { extForMime, saveMedia, listMedia } from "@/lib/db";
 import { r2Key, uploadToR2 } from "@/lib/r2";
 
 const MAX_IMAGE_BYTES = 30 * 1024 * 1024;  // 30 MB
 const MAX_VIDEO_BYTES = 500 * 1024 * 1024; // 500 MB — Next buffers the whole upload in memory
+
+export async function GET() {
+  const media = listMedia();
+  return NextResponse.json(media);
+}
 
 export async function POST(req: Request) {
   const form = await req.formData();

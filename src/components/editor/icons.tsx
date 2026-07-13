@@ -248,7 +248,28 @@ export function CloseIcon(p: IconProps) {
 export function PlayIcon(p: IconProps) {
   return (
     <Icon {...p}>
-      <path d="M7 4.5v15l13-7.5-13-7.5z" fill="currentColor" stroke="none" />
+      <path d="M5 3l14 9-14 9V3z" fill="currentColor" stroke="none" />
+    </Icon>
+  );
+}
+
+export function LayersIcon(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <polygon points="12 2 2 7 12 12 22 7 12 2" />
+      <polyline points="2 12 12 17 22 12" />
+      <polyline points="2 17 12 22 22 17" />
+    </Icon>
+  );
+}
+
+export function UploadCloudIcon(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <path d="M16 16l-4-4-4 4" />
+      <path d="M12 12v9" />
+      <path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3" />
+      <path d="M16 16l-4-4-4 4" />
     </Icon>
   );
 }

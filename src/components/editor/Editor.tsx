@@ -63,7 +63,17 @@ import {
   PlusIcon,
   CloseIcon,
   PlayIcon,
+  LayersIcon,
+  UploadCloudIcon,
 } from "@/components/editor/icons";
+
+interface MediaMeta {
+  id: string;
+  mime: string;
+  kind: "image" | "video";
+  ext: string;
+  bytes: number;
+}
 
 /* ------------------------------------------------------------------ */
 /* constants                                                           */
@@ -609,12 +619,27 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
   // Replays an entrance animation on the canvas; nonce forces a remount.
   const [animPreview, setAnimPreview] = useState<{ id: string; anim: EntranceAnim; nonce: number } | null>(null);
   const [versions, setVersions] = useState<PageVersion[] | null>(null);
   const [uploading, setUploading] = useState(false);
   const [stickerAnchor, setStickerAnchor] = useState<DOMRect | null>(null);
-  const [storage, setStorage] = useState<{ bytes: number; count: number; capBytes: number } | null>(null);
+  const [storage, setStorage] = useState<{ bytes: number; capBytes: number } | null>(null);
+
+  const [leftTab, setLeftTab] = useState<"pages" | "uploads">("pages");
+  const [uploads, setUploads] = useState<MediaMeta[]>([]);
+  
+  const fetchUploads = useCallback(async () => {
+    try {
+      const res = await fetch("/api/images");
+      if (res.ok) setUploads(await res.json());
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (leftTab === "uploads") fetchUploads();
+  }, [leftTab, fetchUploads]);
   // Detect narrow phones so we can show a "use desktop" nudge.
   const [isNarrow, setIsNarrow] = useState(false);
   const [narrowDismissed, setNarrowDismissed] = useState(false);
@@ -792,6 +817,78 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
     () => (page ? Math.max(0, ...page.data.elements.map((e) => e.z)) + 1 : 1),
     [page]
   );
+
+  useEffect(() => {
+    const onPaste = async (e: ClipboardEvent) => {
+      // Don't intercept paste if typing in a text input or textarea
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      const files: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === "file" && (item.type.startsWith("image/") || item.type.startsWith("video/"))) {
+          const file = item.getAsFile();
+          if (file) files.push(file);
+        }
+      }
+
+      if (!files.length) return;
+
+      setUploading(true);
+      try {
+        let offset = 0;
+        for (const file of files) {
+          const fd = new FormData();
+          fd.append("file", file);
+          const res = await fetch("/api/images", { method: "POST", body: fd });
+          if (!res.ok) continue;
+          
+          const { url } = await res.json();
+          const isVideo = file.type.startsWith("video/");
+          const w = isVideo ? 480 : 360;
+          const h = isVideo ? 480 * (9 / 16) : 360;
+          const elId = nanoid(8);
+          
+          mutateData((d) => {
+            if (isVideo) {
+              return {
+                ...d,
+                elements: [
+                  ...d.elements,
+                  {
+                    id: elId, type: "video", x: PAGE_W / 2 - w / 2 + offset, y: PAGE_H / 2 - h / 2 + offset,
+                    w, h, rotation: 0, z: nextZ() + offset / 30, src: url, frame: "none", controls: true
+                  } as PageElement
+                ]
+              };
+            } else {
+              return {
+                ...d,
+                elements: [
+                  ...d.elements,
+                  {
+                    id: elId, type: "photo", x: PAGE_W / 2 - w / 2 + offset, y: PAGE_H / 2 - h / 2 + offset,
+                    w, h, rotation: 0, z: nextZ() + offset / 30, src: url, filter: "none", frame: "none"
+                  } as PageElement
+                ]
+              };
+            }
+          });
+          setSelectedId(elId);
+          offset += 30;
+        }
+        await fetchUploads();
+      } finally {
+        setUploading(false);
+      }
+    };
+    
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [mutateData, nextZ, fetchUploads]);
 
   const addText = useCallback(() => {
     if (!page) return;
@@ -1031,7 +1128,8 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
 
   const removePage = useCallback(
     async (id: string) => {
-      if (!confirm("Delete this page? Its history goes with it.")) return;
+      // Removed native window.confirm() because it can be silently blocked by mobile browsers
+      // or PWA shells, causing the button to appear broken.
       await fetch(`/api/pages/${id}`, { method: "DELETE" });
       setPages((prev) => {
         const next = prev.filter((p) => p.id !== id);
@@ -1110,12 +1208,29 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
         const dx = dxRaw / s;
         const dy = dyRaw / s;
         let nx = x, ny = y, nw = w, nh = h;
-        if (dir.includes("e")) nw = w + dx;
-        if (dir.includes("s")) nh = h + dy;
-        if (dir.includes("w")) { nw = w - dx; nx = x + dx; }
-        if (dir.includes("n")) { nh = h - dy; ny = y + dy; }
+        let cropX = el.cropX;
+        let cropY = el.cropY;
+
+        if (dir.length === 2) {
+          // Corner: lock aspect ratio
+          const ratio = w / h;
+          if (dir.includes("e")) nw = w + dx;
+          if (dir.includes("w")) { nw = w - dx; nx = x + dx; }
+          nh = nw / ratio;
+          if (dir.includes("n")) { ny = y + (h - nh); }
+          // Reset crop to center when aspect ratio is preserved by corners
+          cropX = 50;
+          cropY = 50;
+        } else {
+          // Edge: free resize
+          if (dir === "e") { nw = w + dx; cropX = 0; }
+          if (dir === "w") { nw = w - dx; nx = x + dx; cropX = 100; }
+          if (dir === "s") { nh = h + dy; cropY = 0; }
+          if (dir === "n") { nh = h - dy; ny = y + dy; cropY = 100; }
+        }
+
         if (nw < 40 || nh < 40) return;
-        mutateElement(el.id, (cur) => ({ ...cur, x: nx, y: ny, w: nw, h: nh }));
+        mutateElement(el.id, (cur) => ({ ...cur, x: nx, y: ny, w: nw, h: nh, cropX, cropY }));
       });
     },
     [mutateElement]
@@ -1430,44 +1545,157 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
       />
 
       <div className="flex-1 flex flex-col md:flex-row min-h-0">
-        {/* Page list */}
-        <aside className="md:w-40 shrink-0 bg-paper border-b md:border-b-0 md:border-r border-hairline flex md:flex-col gap-3 p-3 overflow-x-auto md:overflow-y-auto no-scrollbar">
-          {pages.map((p, i) => (
-            <div key={p.id} className="shrink-0 group relative">
+        {/* Left Rail (Tabs) - Desktop only */}
+        <nav className="w-16 hidden md:flex flex-col items-center py-4 gap-4 bg-ink text-paper/60 border-r border-hairline shrink-0">
+          <button 
+            onClick={() => setLeftTab("pages")} 
+            className={`flex flex-col items-center gap-1.5 transition-colors ${leftTab === "pages" ? "text-accent" : "hover:text-paper"}`}
+          >
+            <LayersIcon size={24} />
+            <span className="text-[10px] font-medium tracking-wide">Pages</span>
+          </button>
+          <button 
+            onClick={() => setLeftTab("uploads")} 
+            className={`flex flex-col items-center gap-1.5 transition-colors ${leftTab === "uploads" ? "text-accent" : "hover:text-paper"}`}
+          >
+            <UploadCloudIcon size={24} />
+            <span className="text-[10px] font-medium tracking-wide">Uploads</span>
+          </button>
+        </nav>
+
+        {/* Active Left Panel */}
+        <aside className="md:w-[220px] shrink-0 bg-paper border-b md:border-b-0 md:border-r border-hairline flex flex-col p-3 overflow-x-auto md:overflow-y-auto no-scrollbar">
+          {leftTab === "pages" ? (
+            <div className="flex md:flex-col gap-3">
+              {pages.map((p, i) => (
+                <div key={p.id} className="shrink-0 group relative">
+                  <button
+                    onClick={() => switchPage(p.id)}
+                    className={`block rounded-lg overflow-hidden border-2 transition-colors ${
+                      p.id === currentId ? "border-accent" : "border-hairline hover:border-ink-soft"
+                    }`}
+                    style={{ width: 96, height: 128 }}
+                  >
+                    <div style={{ transform: `scale(${92 / PAGE_W})`, transformOrigin: "top left", pointerEvents: "none" }}>
+                      <PageRenderer data={p.data} />
+                    </div>
+                  </button>
+                  <div className="text-[10px] text-ink-soft text-center mt-1 truncate w-24">
+                    {i + 1}. {p.title}
+                  </div>
+                  <div className={`absolute top-1 right-1 flex-col gap-1 ${p.id === currentId ? "flex" : "hidden md:group-hover:flex"}`}>
+                    <button title="Move up" onClick={() => movePage(p.id, -1)} className="w-6 h-6 flex items-center justify-center bg-paper/90 border border-hairline rounded shadow-sm hover:text-accent">
+                      <ArrowUpIcon size={13} />
+                    </button>
+                    <button title="Move down" onClick={() => movePage(p.id, 1)} className="w-6 h-6 flex items-center justify-center bg-paper/90 border border-hairline rounded shadow-sm hover:text-accent">
+                      <ArrowDownIcon size={13} />
+                    </button>
+                    <button title="Delete page" onClick={(e) => { e.preventDefault(); e.stopPropagation(); removePage(p.id); }} className="w-6 h-6 flex items-center justify-center bg-paper/90 border border-hairline rounded shadow-sm text-red-400 hover:text-red-500 hover:bg-red-50">
+                      <CloseIcon size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))}
               <button
-                onClick={() => switchPage(p.id)}
-                className={`block rounded-lg overflow-hidden border-2 transition-colors ${
-                  p.id === currentId ? "border-accent" : "border-hairline hover:border-ink-soft"
-                }`}
+                onClick={addPage}
+                className="shrink-0 rounded-lg border-2 border-dashed border-hairline text-ink-soft hover:border-accent hover:text-accent transition-colors flex items-center justify-center"
                 style={{ width: 96, height: 128 }}
               >
-                <div style={{ transform: `scale(${92 / PAGE_W})`, transformOrigin: "top left", pointerEvents: "none" }}>
-                  <PageRenderer data={p.data} />
-                </div>
+                <PlusIcon size={26} />
               </button>
-              <div className="text-[10px] text-ink-soft text-center mt-1 truncate w-24">
-                {i + 1}. {p.title}
-              </div>
-              <div className="absolute top-1 right-1 flex-col gap-1 hidden group-hover:flex">
-                <button title="Move up" onClick={() => movePage(p.id, -1)} className="w-5 h-5 flex items-center justify-center bg-paper/90 border border-hairline rounded hover:text-accent">
-                  <ArrowUpIcon size={11} />
-                </button>
-                <button title="Move down" onClick={() => movePage(p.id, 1)} className="w-5 h-5 flex items-center justify-center bg-paper/90 border border-hairline rounded hover:text-accent">
-                  <ArrowDownIcon size={11} />
-                </button>
-                <button title="Delete page" onClick={() => removePage(p.id)} className="w-5 h-5 flex items-center justify-center bg-paper/90 border border-hairline rounded hover:text-red-500">
-                  <CloseIcon size={11} />
-                </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <button
+                onClick={() => {
+                  const input = document.createElement("input");
+                  input.type = "file";
+                  input.accept = "image/*,video/*";
+                  input.multiple = true;
+                  input.onchange = async (e) => {
+                    const files = (e.target as HTMLInputElement).files;
+                    if (files?.length) {
+                      setUploading(true);
+                      try {
+                        for (const file of Array.from(files)) {
+                          const fd = new FormData();
+                          fd.append("file", file);
+                          await fetch("/api/images", { method: "POST", body: fd });
+                        }
+                        await fetchUploads();
+                      } finally {
+                        setUploading(false);
+                      }
+                    }
+                  };
+                  input.click();
+                }}
+                className="w-full bg-accent text-paper py-2 rounded-lg font-bold hover:bg-[#a4636e] transition-colors flex items-center justify-center gap-2 shadow-sm"
+              >
+                <UploadCloudIcon size={18} /> Upload Media
+              </button>
+              
+              <div className="grid grid-cols-2 gap-2">
+                {uploads.map((m) => (
+                  <button
+                    key={m.id}
+                    title="Click to add to page"
+                    onClick={() => {
+                      if (!page) return;
+                      const w = m.kind === "video" ? 480 : 360;
+                      const h = m.kind === "video" ? 480 * (9 / 16) : 360;
+                      const elId = nanoid(8);
+                      const z = nextZ();
+                      if (m.kind === "image") {
+                        mutateData((d) => ({
+                          ...d,
+                          elements: [
+                            ...d.elements,
+                            {
+                              id: elId, type: "photo", x: PAGE_W / 2 - w / 2, y: PAGE_H / 2 - h / 2,
+                              w, h, rotation: 0, z, src: `/api/images/${m.id}`, filter: "none", frame: "none"
+                            }
+                          ]
+                        }));
+                      } else {
+                        mutateData((d) => ({
+                          ...d,
+                          elements: [
+                            ...d.elements,
+                            {
+                              id: elId, type: "video", x: PAGE_W / 2 - w / 2, y: PAGE_H / 2 - h / 2,
+                              w, h, rotation: 0, z, src: `/api/images/${m.id}`, frame: "none", controls: true
+                            }
+                          ]
+                        }));
+                      }
+                      setSelectedId(elId);
+                    }}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("application/vnd.ourstory.media", JSON.stringify(m));
+                      e.dataTransfer.effectAllowed = "copy";
+                    }}
+                    className="relative aspect-square bg-gray-100 rounded-md overflow-hidden hover:ring-2 hover:ring-accent group cursor-grab active:cursor-grabbing"
+                  >
+                    {m.kind === "image" ? (
+                      <img src={`/api/images/${m.id}`} className="w-full h-full object-cover" alt="" />
+                    ) : (
+                      <video src={`/api/images/${m.id}`} className="w-full h-full object-cover" />
+                    )}
+                    {m.kind === "video" && (
+                      <div className="absolute top-1 left-1 bg-black/50 rounded px-1 flex items-center text-white">
+                        <VideoIcon size={10} />
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-accent/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <PlusIcon className="text-white drop-shadow-md" size={24} />
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
-          ))}
-          <button
-            onClick={addPage}
-            className="shrink-0 rounded-lg border-2 border-dashed border-hairline text-ink-soft hover:border-accent hover:text-accent transition-colors flex items-center justify-center"
-            style={{ width: 96, height: 128 }}
-          >
-            <PlusIcon size={26} />
-          </button>
+          )}
         </aside>
 
         {/* Canvas stage */}
@@ -1500,9 +1728,42 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                       return (
                         <div
                           key={el.id}
-                          style={{ ...elementStyle(el), cursor: isEditing ? "text" : "move" }}
+                          style={{ 
+                            ...elementStyle(el), 
+                            cursor: isEditing ? "text" : "move",
+                            ...(el.type === "shape" && el.id === dragOverId ? { filter: "brightness(1.1) drop-shadow(0 0 8px rgba(0,0,0,0.3))", transform: "scale(1.02)", transition: "all 0.2s" } : {})
+                          }}
                           onPointerDown={(e) => startMove(e, el)}
                           onDoubleClick={() => el.type === "text" && setEditingTextId(el.id)}
+                          onDragOver={(e) => {
+                            if (el.type === "shape" && e.dataTransfer.types.includes("application/vnd.ourstory.media")) {
+                              e.preventDefault(); // Necessary to allow dropping
+                              e.dataTransfer.dropEffect = "copy";
+                            }
+                          }}
+                          onDragEnter={(e) => {
+                            if (el.type === "shape" && e.dataTransfer.types.includes("application/vnd.ourstory.media")) {
+                              e.preventDefault();
+                              setDragOverId(el.id);
+                            }
+                          }}
+                          onDragLeave={(e) => {
+                            if (el.type === "shape") {
+                              setDragOverId(null);
+                            }
+                          }}
+                          onDrop={(e) => {
+                            if (el.type === "shape") {
+                              e.preventDefault();
+                              setDragOverId(null);
+                              try {
+                                const data = JSON.parse(e.dataTransfer.getData("application/vnd.ourstory.media"));
+                                if (data.kind === "image") {
+                                  mutateElement(el.id, (cur) => ({ ...cur, src: `/api/images/${data.id}` }));
+                                }
+                              } catch (err) {}
+                            }
+                          }}
                         >
                           {isEditing && el.type === "text" ? (
                             <textarea
@@ -1534,7 +1795,11 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                               transition={
                                 previewEntrance.spring
                                   ? { type: "spring", stiffness: 240, damping: 17 }
-                                  : { duration: 0.65, ease: [0.22, 1, 0.36, 1] }
+                                  : { 
+                                      duration: el.animDuration ?? (previewEntrance.linear ? 1.5 : 0.65), 
+                                      ease: previewEntrance.linear ? "linear" : [0.22, 1, 0.36, 1],
+                                      ...(previewEntrance.loop ? { repeat: Infinity, repeatType: previewEntrance.loop, repeatDelay: 1.5 } : {})
+                                    }
                               }
                             >
                               <ElementBody el={el} />
@@ -1620,8 +1885,8 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
           )}
         </main>
 
-        {/* Inspector */}
-        <aside className="md:w-72 shrink-0 bg-paper border-t md:border-t-0 md:border-l border-hairline px-4 pb-6 overflow-y-auto">
+        {/* Inspector (Desktop/Tablet only) */}
+        <aside className="hidden md:block md:w-72 shrink-0 bg-paper md:border-l border-hairline px-4 pb-6 overflow-y-auto">
           {page && !selected && (
             <Section title="Page" defaultOpen>
               <Field label="Title">
@@ -1910,6 +2175,24 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                   value={Math.round((selected.opacity ?? 1) * 100)}
                   onChange={(v) => mutateElement(selected.id, (el) => ({ ...el, opacity: v / 100 }))}
                 />
+                {(selected.type === "photo" || selected.type === "video" || (selected.type === "shape" && selected.src)) && (
+                  <>
+                    <Slider
+                      label={`Pan X (Horizontal) — ${Math.round(selected.cropX ?? 50)}%`}
+                      min={0}
+                      max={100}
+                      value={Math.round(selected.cropX ?? 50)}
+                      onChange={(v) => mutateElement(selected.id, (el) => ({ ...el, cropX: v }))}
+                    />
+                    <Slider
+                      label={`Pan Y (Vertical) — ${Math.round(selected.cropY ?? 50)}%`}
+                      min={0}
+                      max={100}
+                      value={Math.round(selected.cropY ?? 50)}
+                      onChange={(v) => mutateElement(selected.id, (el) => ({ ...el, cropY: v }))}
+                    />
+                  </>
+                )}
                 <div className="grid grid-cols-4 gap-1">
                   {(
                     [
@@ -2015,6 +2298,28 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                       step={0.1}
                       value={selected.animDelay ?? 0}
                       onChange={(e) => mutateElement(selected.id, (el) => ({ ...el, animDelay: Number(e.target.value) }))}
+                      className="w-full accent-[#b76e79] mb-4"
+                    />
+                    <div className="text-xs text-ink-soft mb-1 flex items-center justify-between">
+                      <span>
+                        Speed — {selected.animDuration === undefined ? "auto" : `${selected.animDuration.toFixed(1)}s`}
+                      </span>
+                      {selected.animDuration !== undefined && (
+                        <button
+                          onClick={() => mutateElement(selected.id, (el) => ({ ...el, animDuration: undefined }))}
+                          className="underline underline-offset-2 hover:text-accent"
+                        >
+                          auto
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="range"
+                      min={0.1}
+                      max={5}
+                      step={0.1}
+                      value={selected.animDuration ?? (selected.anim === "typewriter" ? 1.5 : 0.65)}
+                      onChange={(e) => mutateElement(selected.id, (el) => ({ ...el, animDuration: Number(e.target.value) }))}
                       className="w-full accent-[#b76e79]"
                     />
                   </div>
@@ -2048,7 +2353,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
 
           {/* Floating options card */}
           {fabOpen && (
-            <div className="absolute bottom-16 right-0 w-72 bg-paper rounded-2xl shadow-2xl border border-hairline p-4 z-50">
+            <div className="absolute bottom-16 right-0 w-72 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain bg-paper rounded-2xl shadow-2xl border border-hairline p-4 z-50 no-scrollbar">
               {!selected ? (
                 /* ── No element selected: Add-element panel ── */
                 <>
@@ -2108,7 +2413,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                   </div>
                   {/* Sticker grid — expands inline when sticker button tapped */}
                   {mobileStickerOpen && (
-                    <div className="border-t border-hairline pt-3">
+                    <div className="border-t border-hairline pt-3 mb-2">
                       <p className="label-caps mb-2">Pick a sticker</p>
                       <div className="flex flex-wrap gap-1">
                         {STICKERS.map((s) => (
@@ -2127,6 +2432,67 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                       </div>
                     </div>
                   )}
+
+                  {/* ── Page Settings (Mobile) ── */}
+                  <div className="border-t border-hairline pt-4 mt-2">
+                    <p className="label-caps mb-3">Page Settings</p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-[11px] text-ink-soft mb-1 uppercase tracking-wider">Title</label>
+                        <input
+                          value={page.title}
+                          onChange={(e) => updateCurrentPage((p) => ({ ...p, title: e.target.value }))}
+                          className={`${inputCls} w-full`}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-ink-soft mb-1 uppercase tracking-wider">Transition</label>
+                        <select
+                          value={page.transition}
+                          onChange={(e) => updateCurrentPage((p) => ({ ...p, transition: e.target.value as Transition }))}
+                          className={`${selectCls} w-full`}
+                        >
+                          {TRANSITIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-ink-soft mb-1 uppercase tracking-wider">Ambient effect</label>
+                        <select
+                          value={page.data.effect ?? "none"}
+                          onChange={(e) => mutateData((d) => ({ ...d, effect: e.target.value as PageEffect }))}
+                          className={`${selectCls} w-full`}
+                        >
+                          {PAGE_EFFECTS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-ink-soft mb-1 uppercase tracking-wider">Background</label>
+                        <div className="flex flex-wrap gap-1.5 items-center">
+                          {BACKGROUNDS.slice(0, 7).map((b) => (
+                            <button
+                              key={b.value}
+                              title={b.label}
+                              onClick={() => mutateData((d) => ({ ...d, background: b.value }))}
+                              className={`w-7 h-7 rounded-full border ${
+                                page.data.background === b.value ? "ring-2 ring-accent ring-offset-1" : "border-hairline"
+                              }`}
+                              style={{ background: b.value }}
+                            />
+                          ))}
+                          <ColorChip
+                            title="Custom background color wheel"
+                            value={page.data.background}
+                            suggestions={["#ffffff", "#fdf9f4", "#fbf3f2", "#f4f6f3", "#f3f5f8", "#fff8ec"]}
+                            onChange={(c) => mutateData((d) => ({ ...d, background: c }))}
+                            allowGradient
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-ink-soft mt-4 leading-relaxed">
+                      Use the grid above to add elements. Click any element on the canvas to style it. Everything autosaves.
+                    </p>
+                  </div>
                 </>
               ) : (
                 /* ── Element selected: Format + actions panel ── */
@@ -2202,6 +2568,37 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                         <button onClick={() => setText(selected.id, { align: "center" })} className={`${tb(selected.align === "center")} w-9`}><AlignCenterIcon size={15} /></button>
                         <button onClick={() => setText(selected.id, { align: "right" })} className={`${tb(selected.align === "right")} w-9`}><AlignRightIcon size={15} /></button>
                       </div>
+                    </div>
+                  )}
+
+                  {/* Image Adjustments (Pan) */}
+                  {(selected.type === "photo" || selected.type === "video" || (selected.type === "shape" && selected.src)) && (
+                    <div className="space-y-2 mb-4 border border-hairline p-2 rounded-xl">
+                      <p className="label-caps mb-2 text-[10px]">Adjust Image Panning</p>
+                      <div className="text-xs text-ink-soft mb-1 flex justify-between">
+                        <span>Pan X</span>
+                        <span>{Math.round(selected.cropX ?? 50)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={Math.round(selected.cropX ?? 50)}
+                        onChange={(e) => mutateElement(selected.id, (el) => ({ ...el, cropX: Number(e.target.value) }))}
+                        className="w-full accent-[#b76e79]"
+                      />
+                      <div className="text-xs text-ink-soft mb-1 flex justify-between mt-2">
+                        <span>Pan Y</span>
+                        <span>{Math.round(selected.cropY ?? 50)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={Math.round(selected.cropY ?? 50)}
+                        onChange={(e) => mutateElement(selected.id, (el) => ({ ...el, cropY: Number(e.target.value) }))}
+                        className="w-full accent-[#b76e79]"
+                      />
                     </div>
                   )}
 

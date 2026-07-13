@@ -233,6 +233,12 @@ export function getMedia(id: string): MediaMeta | null {
   return row ?? null;
 }
 
+export function listMedia(): MediaMeta[] {
+  return db()
+    .prepare("SELECT id, mime, kind, ext, bytes FROM images ORDER BY rowid DESC")
+    .all() as MediaMeta[];
+}
+
 /** Remove the metadata row. The R2 object must be deleted by the caller first. */
 export function deleteMedia(id: string): void {
   db().prepare("DELETE FROM images WHERE id = ?").run(id);

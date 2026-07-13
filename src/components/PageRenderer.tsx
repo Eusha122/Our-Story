@@ -68,7 +68,7 @@ export const FONT_MAP: Record<TextFont, string> = {
 // element's own rotation transform on the outer positioned div.
 export const ENTRANCES: Record<
   Exclude<EntranceAnim, "none">,
-  { from: TargetAndTransition; to: TargetAndTransition; spring?: boolean }
+  { from: TargetAndTransition; to: TargetAndTransition; spring?: boolean; linear?: boolean; loop?: "loop" | "reverse" | "mirror" }
 > = {
   fade: { from: { opacity: 0 }, to: { opacity: 1 } },
   rise: { from: { opacity: 0, y: 70 }, to: { opacity: 1, y: 0 } },
@@ -77,6 +77,8 @@ export const ENTRANCES: Record<
   pop: { from: { opacity: 0, scale: 0.2 }, to: { opacity: 1, scale: 1 }, spring: true },
   swing: { from: { opacity: 0, rotate: -12, y: -50 }, to: { opacity: 1, rotate: 0, y: 0 }, spring: true },
   blur: { from: { opacity: 0, filter: "blur(16px)" }, to: { opacity: 1, filter: "blur(0px)" } },
+  typewriter: { from: { clipPath: "inset(0 100% 0 0)" }, to: { clipPath: "inset(0 0% 0 0)" }, linear: true },
+  "typewriter-loop": { from: { clipPath: "inset(0 100% 0 0)" }, to: { clipPath: "inset(0 0% 0 0)" }, linear: true, loop: "reverse" },
 };
 
 export function elementStyle(el: PageElement): CSSProperties {
@@ -96,6 +98,7 @@ function PhotoBody({ el }: { el: PhotoElement }) {
   const imgStyle: CSSProperties = {
     filter: FILTER_MAP[el.filter ?? "none"],
     transform: el.flip ? "scaleX(-1)" : undefined,
+    objectPosition: `${el.cropX ?? 50}% ${el.cropY ?? 50}%`,
   };
   const shadowClass = el.shadow === false ? "" : "photo-shadow";
   if (el.frame === "polaroid") {
@@ -237,21 +240,23 @@ function ShapeBody({ el }: { el: ShapeElement }) {
           <div className="absolute inset-0" style={{ ...maskStyle, background: el.borderColor ?? "#2b2620" }} />
         ) : null}
         <div
-          className="absolute"
-          style={{ ...maskStyle, background: el.fill, inset: el.borderW ?? 0 }}
+          className="absolute bg-cover"
+          style={{ ...maskStyle, background: el.src ? undefined : el.fill, backgroundImage: el.src ? `url(${el.src})` : undefined, backgroundPosition: `${el.cropX ?? 50}% ${el.cropY ?? 50}%`, inset: el.borderW ?? 0 }}
         />
       </div>
     );
   }
   if (el.shape === "circle") {
-    return <div className="w-full h-full" style={{ background: el.fill, borderRadius: "50%", border }} />;
+    return <div className="w-full h-full bg-cover" style={{ background: el.src ? undefined : el.fill, backgroundImage: el.src ? `url(${el.src})` : undefined, backgroundPosition: `${el.cropX ?? 50}% ${el.cropY ?? 50}%`, borderRadius: "50%", border }} />;
   }
   if (el.shape === "tape") {
     return (
       <div
-        className="w-full h-full"
+        className="w-full h-full bg-cover"
         style={{
-          background: el.fill,
+          background: el.src ? undefined : el.fill,
+          backgroundImage: el.src ? `url(${el.src})` : undefined,
+          backgroundPosition: `${el.cropX ?? 50}% ${el.cropY ?? 50}%`,
           borderRadius: el.radius ?? 2,
           // Slightly torn short edges, like real washi tape.
           clipPath: "polygon(1.5% 0%, 98.5% 4%, 100% 50%, 98% 96%, 2% 100%, 0% 55%)",
@@ -260,7 +265,7 @@ function ShapeBody({ el }: { el: ShapeElement }) {
     );
   }
   // rect and line
-  return <div className="w-full h-full" style={{ background: el.fill, borderRadius: el.radius ?? 0, border }} />;
+  return <div className="w-full h-full bg-cover" style={{ background: el.src ? undefined : el.fill, backgroundImage: el.src ? `url(${el.src})` : undefined, backgroundPosition: `${el.cropX ?? 50}% ${el.cropY ?? 50}%`, borderRadius: el.radius ?? 0, border }} />;
 }
 
 /* ---- Ambient background effects ---- */
@@ -427,12 +432,14 @@ export default function PageRenderer({ data, animate = false }: { data: PageData
                 initial={entrance.from}
                 animate={entrance.to}
                 transition={{
-                  // Wait for the page transition, then stagger unless the
-                  // element has its own delay.
                   delay: 0.45 + (el.animDelay ?? i * 0.12),
                   ...(entrance.spring
                     ? { type: "spring", stiffness: 240, damping: 17 }
-                    : { duration: 0.65, ease: [0.22, 1, 0.36, 1] }),
+                    : { 
+                        duration: el.animDuration ?? (entrance.linear ? 1.5 : 0.65), 
+                        ease: entrance.linear ? "linear" : [0.22, 1, 0.36, 1],
+                        ...(entrance.loop ? { repeat: Infinity, repeatType: entrance.loop, repeatDelay: 1.5 } : {})
+                      }),
                 }}
               >
                 <ElementBody el={el} />

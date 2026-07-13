@@ -30,7 +30,7 @@ export const TRANSITIONS: { value: Transition; label: string }[] = [
 ];
 
 /** PowerPoint-style entrance animation for a single element. */
-export type EntranceAnim = "none" | "fade" | "rise" | "drop" | "zoom" | "pop" | "swing" | "blur";
+export type EntranceAnim = "none" | "fade" | "rise" | "drop" | "zoom" | "pop" | "swing" | "blur" | "typewriter" | "typewriter-loop";
 
 export const ANIMS: { value: EntranceAnim; label: string }[] = [
   { value: "none", label: "None" },
@@ -41,6 +41,8 @@ export const ANIMS: { value: EntranceAnim; label: string }[] = [
   { value: "pop", label: "Pop" },
   { value: "swing", label: "Swing" },
   { value: "blur", label: "Blur in" },
+  { value: "typewriter", label: "Typewriter" },
+  { value: "typewriter-loop", label: "Typewriter (Looping)" },
 ];
 
 export interface ElementBase {
@@ -51,12 +53,16 @@ export interface ElementBase {
   h: number;
   rotation: number; // degrees
   z: number;
+  cropX?: number; // 0-100 percentage for object-position
+  cropY?: number; // 0-100 percentage for object-position
   /** 0–1; undefined = fully opaque. */
   opacity?: number;
   /** Entrance animation played in the viewer when the page opens. */
   anim?: EntranceAnim;
   /** Seconds before the entrance starts; undefined = auto-stagger. */
   animDelay?: number;
+  /** Duration of the animation in seconds; undefined = default (usually 1s). */
+  animDuration?: number;
 }
 
 export type PhotoFrame = "polaroid" | "plain" | "rounded" | "circle";
@@ -107,6 +113,7 @@ export interface ShapeElement extends ElementBase {
   radius?: number;
   borderW?: number;
   borderColor?: string;
+  src?: string;
 }
 
 export type TextFont = "serif" | "elegant" | "sans" | "script" | "dancing" | "hand" | "type";

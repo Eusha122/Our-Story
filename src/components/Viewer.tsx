@@ -179,7 +179,7 @@ export default function Viewer({ pages }: { pages: Page[] }) {
         if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.5) go(dx < 0 ? 1 : -1);
       }}
     >
-      <AnimatePresence custom={dir} mode="popLayout" initial={false}>
+      <AnimatePresence custom={dir} mode="popLayout">
         <motion.div
           key={page.id}
           custom={dir}
