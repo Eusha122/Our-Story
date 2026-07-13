@@ -17,6 +17,11 @@ export const EXT_BY_MIME: Record<string, string> = {
   "video/quicktime": "mov",
   "video/webm": "webm",
   "video/x-matroska": "mkv",
+  "audio/mpeg": "mp3",
+  "audio/wav": "wav",
+  "audio/aac": "aac",
+  "audio/ogg": "ogg",
+  "audio/mp4": "m4a",
 };
 
 export function extForMime(mime: string, fallback: string): string {
@@ -209,7 +214,7 @@ export function restoreVersion(pageId: string, versionId: number): Page | null {
 
 // ─── Media metadata (files live in Cloudflare R2) ─────────────────────────
 
-export type MediaKind = "image" | "video";
+export type MediaKind = "image" | "video" | "audio";
 
 export interface MediaMeta {
   id: string;

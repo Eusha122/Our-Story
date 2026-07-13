@@ -70,7 +70,7 @@ import {
 interface MediaMeta {
   id: string;
   mime: string;
-  kind: "image" | "video";
+  kind: "image" | "video" | "audio";
   ext: string;
   bytes: number;
 }
@@ -581,7 +581,7 @@ function Slider({
 function trackPointer(
   e: React.PointerEvent,
   onMove: (dx: number, dy: number, ev: PointerEvent) => void,
-  onEnd?: () => void
+  onEnd?: (ev: PointerEvent) => void
 ) {
   e.preventDefault();
   e.stopPropagation();
@@ -800,6 +800,24 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
     },
     [mutateElement]
   );
+  const setEnvelope = useCallback(
+    (id: string, patch: Record<string, unknown>) => {
+      mutateElement(id, (el) => (el.type === "envelope" ? ({ ...el, ...patch } as PageElement) : el));
+    },
+    [mutateElement]
+  );
+  const setMap = useCallback(
+    (id: string, patch: Record<string, unknown>) => {
+      mutateElement(id, (el) => (el.type === "map" ? ({ ...el, ...patch } as PageElement) : el));
+    },
+    [mutateElement]
+  );
+  const setAudio = useCallback(
+    (id: string, patch: Record<string, unknown>) => {
+      mutateElement(id, (el) => (el.type === "audio" ? ({ ...el, ...patch } as PageElement) : el));
+    },
+    [mutateElement]
+  );
 
   const switchPage = useCallback(
     (id: string | null) => {
@@ -862,7 +880,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                   ...d.elements,
                   {
                     id: elId, type: "video", x: PAGE_W / 2 - w / 2 + offset, y: PAGE_H / 2 - h / 2 + offset,
-                    w, h, rotation: 0, z: nextZ() + offset / 30, src: url, frame: "none", controls: true
+                    w, h, rotation: 0, z: nextZ() + offset / 30, src: url, frame: "plain", controls: true
                   } as PageElement
                 ]
               };
@@ -873,7 +891,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                   ...d.elements,
                   {
                     id: elId, type: "photo", x: PAGE_W / 2 - w / 2 + offset, y: PAGE_H / 2 - h / 2 + offset,
-                    w, h, rotation: 0, z: nextZ() + offset / 30, src: url, filter: "none", frame: "none"
+                    w, h, rotation: 0, z: nextZ() + offset / 30, src: url, filter: "none", frame: "plain"
                   } as PageElement
                 ]
               };
@@ -908,6 +926,59 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
       size: 40,
       color: "#2b2620",
       align: "center",
+    };
+    mutateData((d) => ({ ...d, elements: [...d.elements, el] }));
+    setSelectedId(el.id);
+  }, [page, nextZ, mutateData]);
+
+  const addEnvelope = useCallback(() => {
+    if (!page) return;
+    const el: PageElement = {
+      id: nanoid(8),
+      type: "envelope",
+      x: PAGE_W / 2 - 250,
+      y: PAGE_H / 2 - 150,
+      w: 500,
+      h: 300,
+      rotation: 0,
+      z: nextZ(),
+      envelopeText: "My dearest...",
+    };
+    mutateData((d) => ({ ...d, elements: [...d.elements, el] }));
+    setSelectedId(el.id);
+  }, [page, nextZ, mutateData]);
+
+  const addMap = useCallback(() => {
+    if (!page) return;
+    const el: PageElement = {
+      id: nanoid(8),
+      type: "map",
+      x: PAGE_W / 2 - 200,
+      y: PAGE_H / 2 - 200,
+      w: 400,
+      h: 400,
+      rotation: 0,
+      z: nextZ(),
+      query: "Eiffel Tower, Paris",
+    };
+    mutateData((d) => ({ ...d, elements: [...d.elements, el] }));
+    setSelectedId(el.id);
+  }, [page, nextZ, mutateData]);
+
+  const addAudio = useCallback((src: string) => {
+    if (!page) return;
+    const el: PageElement = {
+      id: nanoid(8),
+      type: "audio",
+      x: PAGE_W / 2 - 150,
+      y: PAGE_H / 2 - 50,
+      w: 300,
+      h: 100,
+      rotation: 0,
+      z: nextZ(),
+      src,
+      autoplay: true,
+      loop: false,
     };
     mutateData((d) => ({ ...d, elements: [...d.elements, el] }));
     setSelectedId(el.id);
@@ -1201,17 +1272,36 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
           mutateElement(el.id, (cur) => ({ ...cur, x: x + dx / s, y: y + dy / s }));
         },
         (ev) => {
+          const draggedNode = document.getElementById(`el-${el.id}`);
+          if (draggedNode) draggedNode.style.pointerEvents = "none";
+          
+          const targetNode = document.elementFromPoint(ev.clientX, ev.clientY);
+          
+          if (draggedNode) draggedNode.style.pointerEvents = "auto";
+
+          // Check if we dropped it over a page thumbnail
+          const pageNode = targetNode?.closest("[data-page-id]");
+          if (pageNode) {
+            const targetPageId = pageNode.getAttribute("data-page-id");
+            if (targetPageId && targetPageId !== currentId) {
+              setPages(prev => prev.map(p => {
+                if (p.id === targetPageId) {
+                  const maxZ = p.data.elements.length > 0 ? Math.max(...p.data.elements.map(e => e.z)) : 0;
+                  return { ...p, data: { ...p.data, elements: [...p.data.elements, { ...el, z: maxZ + 1 }] } };
+                }
+                if (p.id === currentId) {
+                  return { ...p, data: { ...p.data, elements: p.data.elements.filter(e => e.id !== el.id) } };
+                }
+                return p;
+              }));
+              setSelectedId(null);
+              return;
+            }
+          }
+
           // If the element is a photo, check if we dropped it over a shape!
           if (el.type === "photo" && el.src) {
-            // Temporarily hide the dragged photo so it doesn't block the raycast
-            const draggedNode = document.getElementById(`el-${el.id}`);
-            if (draggedNode) draggedNode.style.pointerEvents = "none";
-            
-            const targetNode = document.elementFromPoint(ev.clientX, ev.clientY);
             const shapeNode = targetNode?.closest("[data-shape-id]");
-            
-            if (draggedNode) draggedNode.style.pointerEvents = "auto";
-
             if (shapeNode) {
               const shapeId = shapeNode.getAttribute("data-shape-id");
               if (shapeId && shapeId !== el.id) {
@@ -1231,7 +1321,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
         }
       );
     },
-    [editingTextId, mutateElement]
+    [editingTextId, mutateElement, currentId, setPages, mutateData]
   );
 
   const startAdjust = useCallback(
@@ -1395,6 +1485,12 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
             </button>
             <button onClick={addText} className={`${tb(false)} gap-1.5 px-3`}>
               <TypeIcon size={17} /> Text
+            </button>
+            <button onClick={addEnvelope} className={`${tb(false)} gap-1.5 px-3`} title="Interactive Envelope">
+              💌 Env
+            </button>
+            <button onClick={addMap} className={`${tb(false)} gap-1.5 px-3`} title="Map Pin">
+              📍 Map
             </button>
             <span className="w-px h-7 bg-hairline mx-1 shrink-0" />
             {SHAPES.map((s) => {
@@ -1633,6 +1729,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
               {pages.map((p, i) => (
                 <div key={p.id} className="shrink-0 group relative">
                   <button
+                    data-page-id={p.id}
                     onClick={() => switchPage(p.id)}
                     className={`block rounded-lg overflow-hidden border-2 transition-colors ${
                       p.id === currentId ? "border-accent" : "border-hairline hover:border-ink-soft"
@@ -1673,7 +1770,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                 onClick={() => {
                   const input = document.createElement("input");
                   input.type = "file";
-                  input.accept = "image/*,video/*";
+                  input.accept = "image/*,video/*,audio/*";
                   input.multiple = true;
                   input.onchange = async (e) => {
                     const files = (e.target as HTMLInputElement).files;
@@ -1716,18 +1813,29 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                             ...d.elements,
                             {
                               id: elId, type: "photo", x: PAGE_W / 2 - w / 2, y: PAGE_H / 2 - h / 2,
-                              w, h, rotation: 0, z, src: `/api/images/${m.id}`, filter: "none", frame: "none"
+                              w, h, rotation: 0, z, src: `/api/images/${m.id}`, filter: "none", frame: "plain"
                             }
                           ]
                         }));
-                      } else {
+                      } else if (m.kind === "video") {
                         mutateData((d) => ({
                           ...d,
                           elements: [
                             ...d.elements,
                             {
                               id: elId, type: "video", x: PAGE_W / 2 - w / 2, y: PAGE_H / 2 - h / 2,
-                              w, h, rotation: 0, z, src: `/api/images/${m.id}`, frame: "none", controls: true
+                              w, h, rotation: 0, z, src: `/api/images/${m.id}`, frame: "plain", controls: true
+                            }
+                          ]
+                        }));
+                      } else if (m.kind === "audio") {
+                        mutateData((d) => ({
+                          ...d,
+                          elements: [
+                            ...d.elements,
+                            {
+                              id: elId, type: "audio", x: PAGE_W / 2 - 150, y: PAGE_H / 2 - 50,
+                              w: 300, h: 100, rotation: 0, z, src: `/api/images/${m.id}`, autoplay: true, loop: false
                             }
                           ]
                         }));
@@ -1739,16 +1847,23 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                       e.dataTransfer.setData("application/vnd.ourstory.media", JSON.stringify(m));
                       e.dataTransfer.effectAllowed = "copy";
                     }}
-                    className="relative aspect-square bg-gray-100 rounded-md overflow-hidden hover:ring-2 hover:ring-accent group cursor-grab active:cursor-grabbing"
+                    className="relative aspect-square bg-gray-100 rounded-md overflow-hidden hover:ring-2 hover:ring-accent group cursor-grab active:cursor-grabbing flex items-center justify-center"
                   >
                     {m.kind === "image" ? (
                       <img src={`/api/images/${m.id}`} className="w-full h-full object-cover" alt="" />
-                    ) : (
+                    ) : m.kind === "video" ? (
                       <video src={`/api/images/${m.id}`} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full bg-paper flex items-center justify-center text-3xl">🎵</div>
                     )}
                     {m.kind === "video" && (
-                      <div className="absolute top-1 left-1 bg-black/50 rounded px-1 flex items-center text-white">
-                        <VideoIcon size={10} />
+                      <div className="absolute bottom-1 right-1 bg-black/60 text-white p-1 rounded">
+                        <VideoIcon size={12} />
+                      </div>
+                    )}
+                    {m.kind === "audio" && (
+                      <div className="absolute bottom-1 right-1 bg-black/60 text-white p-1 rounded text-[10px] uppercase font-bold">
+                        Audio
                       </div>
                     )}
                     <div className="absolute inset-0 bg-accent/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -1762,9 +1877,26 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
         </aside>
 
         {/* Canvas stage */}
-        <main ref={stageRef} className="flex-1 min-w-0 min-h-0 flex items-center justify-center relative">
+        <main 
+          ref={stageRef} 
+          className="flex-1 min-w-0 min-h-0 flex items-center justify-center relative"
+          onPointerDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setSelectedId(null);
+              setEditingTextId(null);
+            }
+          }}
+        >
           {page ? (
-            <div style={{ width: PAGE_W * scale, height: PAGE_H * scale }}>
+            <div 
+              style={{ width: PAGE_W * scale, height: PAGE_H * scale }}
+              onPointerDown={(e) => {
+                if (e.target === e.currentTarget) {
+                  setSelectedId(null);
+                  setEditingTextId(null);
+                }
+              }}
+            >
               <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
                 <div
                   ref={canvasRef}
@@ -1863,18 +1995,19 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                               animate={previewEntrance.to}
                               transition={
                                 previewEntrance.spring
-                                  ? { type: "spring", stiffness: 240, damping: 17 }
-                                  : { 
-                                      duration: el.animDuration ?? (previewEntrance.linear ? 1.5 : 0.65), 
+                                  ? { type: "spring", stiffness: 240, damping: 17, delay: el.animDelay ?? 0 }
+                                  : {
+                                      delay: el.animDelay ?? 0,
+                                      duration: el.animDuration ?? (previewEntrance.linear ? 1.5 : 0.65),
                                       ease: previewEntrance.linear ? "linear" : [0.22, 1, 0.36, 1],
                                       ...(previewEntrance.loop ? { repeat: Infinity, repeatType: previewEntrance.loop, repeatDelay: 1.5 } : {})
                                     }
                               }
                             >
-                              <ElementBody el={el} />
+                              <ElementBody el={el} animate={false} />
                             </motion.div>
                           ) : (
-                            <ElementBody el={el} />
+                            <ElementBody el={el} animate={false} />
                           )}
 
                           {isSelected && !isEditing && (
@@ -2075,6 +2208,13 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
 
                 {selected.type === "photo" && (
                   <>
+                    <button
+                      onClick={() => setPhoto(selected.id, { scratchOff: !selected.scratchOff })}
+                      className={`w-full text-xs border rounded-md py-1.5 mb-2 ${selected.scratchOff ? "border-accent text-accent bg-accent/5" : "border-hairline hover:border-ink-soft"}`}
+                    >
+                      {selected.scratchOff ? "Disable Scratch-off" : "✨ Enable Scratch-off Surprise"}
+                    </button>
+                    {selected.scratchOff && <p className="text-[11px] text-ink-soft mb-4">The image will be hidden under a scratch-off layer in viewer mode!</p>}
                     {selected.frame === "polaroid" ? (
                       <Field label="Caption">
                         <input
@@ -2106,6 +2246,106 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                         )}
                       </>
                     )}
+                  </>
+                )}
+
+                {selected.type === "envelope" && (
+                  <>
+                    <Field label="Hidden Letter Text">
+                      <textarea
+                        value={selected.envelopeText ?? ""}
+                        onChange={(e) => setEnvelope(selected.id, { envelopeText: e.target.value })}
+                        placeholder="My dearest..."
+                        className={`${inputCls} min-h-[100px] py-2`}
+                      />
+                    </Field>
+                    <Field label="Hidden Picture (Optional)">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="text-xs w-full"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          setUploading(true);
+                          try {
+                            const fd = new FormData();
+                            fd.append("file", file);
+                            const res = await fetch("/api/images", { method: "POST", body: fd });
+                            if (res.ok) {
+                              const data = await res.json();
+                              setEnvelope(selected.id, { envelopeSrc: data.url });
+                              await fetchUploads();
+                            }
+                          } finally {
+                            setUploading(false);
+                          }
+                        }}
+                      />
+                      {selected.envelopeSrc && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <img src={selected.envelopeSrc} className="w-10 h-10 object-cover rounded" />
+                          <button onClick={() => setEnvelope(selected.id, { envelopeSrc: undefined })} className="text-red-500 text-xs">Remove</button>
+                        </div>
+                      )}
+                    </Field>
+                    <div className="flex items-center gap-2 mt-4">
+                      <span className="text-xs text-ink-soft">Card Back Color</span>
+                      <ColorChip
+                        title="Card Back Color"
+                        value={selected.cardBackColor ?? "#ffffff"}
+                        suggestions={["#ffffff", "#fdf9f4", "#fbf3f2", "#f4f6f3", "#f3f5f8", "#fff8ec"]}
+                        onChange={(c) => setEnvelope(selected.id, { cardBackColor: c })}
+                      />
+                    </div>
+                  </>
+                )}
+
+                {selected.type === "map" && (
+                  <>
+                    <Field label="Map Location">
+                      <input
+                        value={selected.query}
+                        onChange={(e) => setMap(selected.id, { query: e.target.value })}
+                        placeholder="Eiffel Tower, Paris"
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Slider
+                      label={`Border — ${selected.borderW ?? 0}px`}
+                      min={0}
+                      max={24}
+                      value={selected.borderW ?? 0}
+                      onChange={(v) => setMap(selected.id, { borderW: v })}
+                    />
+                    {(selected.borderW ?? 0) > 0 && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-ink-soft">Border color</span>
+                        <ColorChip
+                          title="Border color"
+                          value={selected.borderColor ?? "#ffffff"}
+                          suggestions={BORDER_COLORS}
+                          onChange={(c) => setMap(selected.id, { borderColor: c })}
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {selected.type === "audio" && (
+                  <>
+                    <button
+                      onClick={() => setAudio(selected.id, { autoplay: !selected.autoplay })}
+                      className={`w-full text-xs border rounded-md py-1.5 mb-2 ${selected.autoplay ? "border-accent text-accent" : "border-hairline hover:border-ink-soft"}`}
+                    >
+                      Autoplay when page opens
+                    </button>
+                    <button
+                      onClick={() => setAudio(selected.id, { loop: !selected.loop })}
+                      className={`w-full text-xs border rounded-md py-1.5 ${selected.loop ? "border-accent text-accent" : "border-hairline hover:border-ink-soft"}`}
+                    >
+                      Loop audio
+                    </button>
                   </>
                 )}
 
@@ -2452,6 +2692,22 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                       <TypeIcon size={20} />
                       Text
                     </button>
+                    {/* Envelope */}
+                    <button
+                      onClick={() => { addEnvelope(); setFabOpen(false); }}
+                      className="flex flex-col items-center gap-1.5 py-3 rounded-xl border border-hairline text-xs hover:border-accent hover:text-accent transition-colors"
+                    >
+                      <span className="text-xl leading-none">💌</span>
+                      Envelope
+                    </button>
+                    {/* Map */}
+                    <button
+                      onClick={() => { addMap(); setFabOpen(false); }}
+                      className="flex flex-col items-center gap-1.5 py-3 rounded-xl border border-hairline text-xs hover:border-accent hover:text-accent transition-colors"
+                    >
+                      <span className="text-xl leading-none">📍</span>
+                      Map
+                    </button>
                     {/* Shapes */}
                     {SHAPES.map((s) => {
                       const ShapeIcon = SHAPE_ICONS[s.value];
@@ -2674,6 +2930,12 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                   {/* Photo formatting */}
                   {selected.type === "photo" && (
                     <div className="space-y-2">
+                      <button
+                        onClick={() => setPhoto(selected.id, { scratchOff: !selected.scratchOff })}
+                        className={`w-full text-[11px] border rounded-md py-1.5 mb-2 ${selected.scratchOff ? "border-accent text-accent bg-accent/5" : "border-hairline hover:border-ink-soft"}`}
+                      >
+                        {selected.scratchOff ? "Disable Scratch-off" : "✨ Enable Scratch-off"}
+                      </button>
                       <div className="flex gap-2">
                         <select
                           value={selected.frame}
@@ -2722,11 +2984,64 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                     </div>
                   )}
 
-                  {/* Video label */}
+                  {/* Video formatting */}
                   {selected.type === "video" && (
                     <p className="text-xs text-ink-soft flex items-center gap-1.5">
                       <VideoIcon size={14} /> Video clip selected
                     </p>
+                  )}
+
+                  {/* Envelope formatting */}
+                  {selected.type === "envelope" && (
+                    <div className="space-y-2">
+                      <p className="label-caps mb-1">Hidden Letter</p>
+                      <textarea
+                        value={selected.envelopeText ?? ""}
+                        onChange={(e) => setEnvelope(selected.id, { envelopeText: e.target.value })}
+                        placeholder="My dearest..."
+                        className={`${inputCls} min-h-[80px] w-full`}
+                      />
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs text-ink-soft">Card Back Color</span>
+                        <ColorChip
+                          title="Card Back Color"
+                          value={selected.cardBackColor ?? "#ffffff"}
+                          suggestions={["#ffffff", "#fdf9f4", "#fbf3f2", "#f4f6f3", "#f3f5f8", "#fff8ec"]}
+                          onChange={(c) => setEnvelope(selected.id, { cardBackColor: c })}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Map formatting */}
+                  {selected.type === "map" && (
+                    <div className="space-y-2">
+                      <p className="label-caps mb-1">Map Location</p>
+                      <input
+                        value={selected.query}
+                        onChange={(e) => setMap(selected.id, { query: e.target.value })}
+                        placeholder="Eiffel Tower, Paris"
+                        className={`${inputCls} w-full`}
+                      />
+                    </div>
+                  )}
+
+                  {/* Audio formatting */}
+                  {selected.type === "audio" && (
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => setAudio(selected.id, { autoplay: !selected.autoplay })}
+                        className={`w-full text-xs border rounded-md py-1.5 ${selected.autoplay ? "border-accent text-accent" : "border-hairline"}`}
+                      >
+                        Autoplay when page opens
+                      </button>
+                      <button
+                        onClick={() => setAudio(selected.id, { loop: !selected.loop })}
+                        className={`w-full text-xs border rounded-md py-1.5 ${selected.loop ? "border-accent text-accent" : "border-hairline"}`}
+                      >
+                        Loop audio
+                      </button>
+                    </div>
                   )}
                 </>
               )}

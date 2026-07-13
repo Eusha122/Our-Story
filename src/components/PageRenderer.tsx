@@ -1,9 +1,13 @@
-import type { CSSProperties } from "react";
+import React, { useRef, useEffect, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { motion, type TargetAndTransition } from "framer-motion";
 import {
   PAGE_W,
   PAGE_H,
+  type AudioElement,
   type EntranceAnim,
+  type EnvelopeElement,
+  type MapElement,
   type PageData,
   type PageEffect,
   type PageElement,
@@ -94,15 +98,18 @@ export function elementStyle(el: PageElement): CSSProperties {
   };
 }
 
-function PhotoBody({ el }: { el: PhotoElement }) {
+function PhotoBody({ el, animate }: { el: PhotoElement; animate: boolean }) {
   const imgStyle: CSSProperties = {
     filter: FILTER_MAP[el.filter ?? "none"],
     transform: el.flip ? "scaleX(-1)" : undefined,
     objectPosition: `${el.cropX ?? 50}% ${el.cropY ?? 50}%`,
   };
   const shadowClass = el.shadow === false ? "" : "photo-shadow";
+  const radius = el.frame === "circle" ? "50%" : el.frame === "rounded" ? 20 : 0;
+  
+  let content = null;
   if (el.frame === "polaroid") {
-    return (
+    content = (
       <div className={`w-full h-full bg-white ${shadowClass} flex flex-col p-[6%] pb-0`}>
         <div className="flex-1 overflow-hidden bg-[#f2efeb]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -116,19 +123,25 @@ function PhotoBody({ el }: { el: PhotoElement }) {
         </div>
       </div>
     );
+  } else {
+    content = (
+      <div
+        className={`w-full h-full ${shadowClass} overflow-hidden bg-[#f2efeb]`}
+        style={{
+          borderRadius: radius,
+          border: el.borderW ? `${el.borderW}px solid ${el.borderColor ?? "#ffffff"}` : undefined,
+        }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={el.src} alt="" draggable={false} className="w-full h-full object-cover" style={imgStyle} />
+      </div>
+    );
   }
-  const radius = el.frame === "circle" ? "50%" : el.frame === "rounded" ? 20 : 0;
+
   return (
-    <div
-      className={`w-full h-full ${shadowClass} overflow-hidden bg-[#f2efeb]`}
-      style={{
-        borderRadius: radius,
-        border: el.borderW ? `${el.borderW}px solid ${el.borderColor ?? "#ffffff"}` : undefined,
-      }}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={el.src} alt="" draggable={false} className="w-full h-full object-cover" style={imgStyle} />
-    </div>
+    <ScratchOffOverlay el={el} animate={animate}>
+      {content}
+    </ScratchOffOverlay>
   );
 }
 
@@ -493,11 +506,310 @@ function EffectLayer({ effect }: { effect: PageEffect }) {
   return null;
 }
 
-export function ElementBody({ el }: { el: PageElement }) {
-  if (el.type === "photo") return <PhotoBody el={el} />;
+function ScratchOffOverlay({ el, children, animate }: { el: PhotoElement; children: React.ReactNode; animate: boolean }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    if (!animate || !el.scratchOff) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    
+    ctx.fillStyle = "#c0c0c0";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < 1000; i++) {
+      ctx.fillStyle = Math.random() > 0.5 ? "#b0b0b0" : "#d0d0d0";
+      ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 2, 2);
+    }
+  }, [animate, el.scratchOff, el.w, el.h]);
+
+  const handleScratch = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!animate || !el.scratchOff) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.beginPath();
+    ctx.arc(x, y, 30, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  if (!el.scratchOff) return <>{children}</>;
+
+  return (
+    <div className="w-full h-full relative">
+      {children}
+      <canvas 
+        ref={canvasRef}
+        width={el.w}
+        height={el.h}
+        className="absolute inset-0 w-full h-full cursor-pointer touch-none"
+        style={{ pointerEvents: animate ? "auto" : "none", zIndex: 10, borderRadius: el.frame === "polaroid" ? 0 : (el.frame === "circle" ? "50%" : 0) }}
+        onPointerMove={(e) => {
+          if (e.buttons > 0 || e.pointerType === "touch") handleScratch(e);
+        }}
+        onPointerDown={handleScratch}
+      />
+    </div>
+  );
+}
+
+function AudioBody({ el }: { el: AudioElement }) {
+  return (
+    <div className="w-full h-full flex flex-col items-center justify-center bg-white/80 backdrop-blur-md rounded-2xl shadow-xl border border-hairline relative">
+      <div className="text-3xl mb-2">🎵</div>
+      <audio
+        controls
+        src={el.src}
+        autoPlay={el.autoplay}
+        loop={el.loop}
+        className="w-[90%] h-10"
+        style={{ pointerEvents: "auto" }}
+      />
+    </div>
+  );
+}
+
+const EASE = [0.22, 1, 0.36, 1] as const;
+
+function EnvelopeBody({ el, animate }: { el: EnvelopeElement; animate: boolean }) {
+  // closed -> open (flap lifts, card peeks) -> reading (fullscreen)
+  const [phase, setPhase] = useState<"closed" | "open" | "reading">("closed");
+  const [showBack, setShowBack] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const paper = el.envelopeColor || "#fdf9f4";
+  const hasPhoto = !!el.envelopeSrc;
+  const hasText = !!el.envelopeText;
+  const backColor = el.cardBackColor || "#ffffff";
+
+  const close = () => {
+    setPhase("closed");
+    setShowBack(false);
+  };
+
+  const letterFace = (bg: string) => (
+    <div className="w-full h-full flex items-center justify-center p-10" style={{ background: bg }}>
+      {hasText ? (
+        <p
+          className="text-center whitespace-pre-wrap"
+          style={{
+            fontFamily: "var(--font-elegant), Georgia, serif",
+            fontSize: "clamp(1.05rem, 3.2vw, 1.4rem)",
+            lineHeight: 1.75,
+            color: "#3a332c",
+          }}
+        >
+          {el.envelopeText}
+        </p>
+      ) : (
+        <p className="text-ink-soft italic text-sm" style={{ fontFamily: "var(--font-elegant), Georgia, serif" }}>
+          This envelope is empty.
+        </p>
+      )}
+    </div>
+  );
+
+  const portal =
+    phase === "reading" && mounted
+      ? createPortal(
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.4, ease: EASE }}
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-6"
+            style={{ background: "rgba(43,38,32,0.32)", backdropFilter: "blur(16px)" }}
+            onClick={close}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 26, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.5, ease: EASE }}
+              className="relative w-full max-w-md"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={close}
+                aria-label="Close"
+                className="absolute -top-3 -right-3 z-10 w-9 h-9 rounded-full bg-white border flex items-center justify-center text-[#8a8178] hover:text-[#b76e79] transition-colors"
+                style={{ borderColor: "#ece7e0", boxShadow: "0 6px 20px rgba(43,38,32,0.18)" }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+
+              <div style={{ perspective: 1800 }}>
+                <div
+                  className="relative w-full rounded-2xl overflow-hidden"
+                  style={{
+                    transformStyle: "preserve-3d",
+                    transition: "transform 0.75s cubic-bezier(0.22,1,0.36,1)",
+                    transform: showBack ? "rotateY(180deg)" : "rotateY(0deg)",
+                    minHeight: hasPhoto ? 380 : 300,
+                    boxShadow: "0 24px 60px rgba(43,38,32,0.22)",
+                  }}
+                >
+                  <div className="absolute inset-0 bg-white" style={{ backfaceVisibility: "hidden" }}>
+                    {hasPhoto ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={el.envelopeSrc} alt="" className="w-full h-full object-cover" style={{ minHeight: 380 }} />
+                    ) : (
+                      letterFace("#ffffff")
+                    )}
+                  </div>
+                  {hasPhoto && (
+                    <div className="absolute inset-0" style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}>
+                      {letterFace(backColor)}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {hasPhoto && hasText && (
+                <button
+                  onClick={() => setShowBack((s) => !s)}
+                  className="mx-auto mt-4 flex items-center gap-2 text-xs tracking-[0.15em] uppercase text-[#8a8178] hover:text-[#b76e79] transition-colors"
+                >
+                  {showBack ? "‹  Back to the photo" : "Turn the card over  ›"}
+                </button>
+              )}
+            </motion.div>
+          </motion.div>,
+          document.body
+        )
+      : null;
+
+  return (
+    <div className="w-full h-full relative select-none" style={{ pointerEvents: animate ? "auto" : "none", perspective: 1400 }}>
+      <div
+        onClick={() => phase === "closed" && setPhase("open")}
+        className="absolute inset-0 overflow-hidden"
+        style={{
+          background: paper,
+          border: "1px solid #ece7e0",
+          borderRadius: 6,
+          cursor: phase === "closed" ? "pointer" : "default",
+          boxShadow: "0 10px 28px rgba(43,38,32,0.14)",
+        }}
+      >
+        {/* Subtle inner shadow where the flap meets the body, always present for depth */}
+        <div
+          className="absolute inset-x-0 top-0"
+          style={{
+            height: "56%",
+            background: "linear-gradient(180deg, rgba(43,38,32,0.05), transparent)",
+            clipPath: "polygon(0% 0%, 100% 0%, 50% 60%)",
+          }}
+        />
+
+        {/* Card peeking out from the envelope */}
+        <motion.div
+          className="absolute left-[8%] right-[8%] rounded-[3px] bg-white"
+          style={{ height: "68%", border: "1px solid #ece7e0", boxShadow: "0 3px 12px rgba(43,38,32,0.10)" }}
+          initial={false}
+          animate={{ top: phase === "closed" ? "40%" : "8%" }}
+          transition={{ duration: 0.55, ease: EASE }}
+          onClick={(e) => {
+            if (phase === "open") {
+              e.stopPropagation();
+              setPhase("reading");
+            }
+          }}
+        />
+
+        {/* Flap, hinged at the top edge */}
+        <motion.div
+          className="absolute inset-x-0 top-0"
+          style={{
+            height: "56%",
+            background: `linear-gradient(155deg, ${paper}, #f2ede6)`,
+            clipPath: "polygon(0% 0%, 100% 0%, 50% 100%)",
+            transformOrigin: "top center",
+            borderBottom: "1px solid #ece7e0",
+          }}
+          initial={false}
+          animate={{ rotateX: phase === "closed" ? 0 : -155 }}
+          transition={{ duration: 0.5, ease: EASE }}
+        />
+
+        {/* Wax seal */}
+        {phase === "closed" && (
+          <div
+            className="absolute left-1/2 top-[28%] -translate-x-1/2 -translate-y-1/2 rounded-full"
+            style={{
+              width: "17%",
+              paddingBottom: "17%",
+              background: "radial-gradient(circle at 35% 30%, #c98a92, #96525c)",
+              boxShadow: "0 3px 10px rgba(122,60,68,0.4)",
+            }}
+          >
+            <div
+              className="absolute inset-0"
+              style={{
+                WebkitMaskImage: HEART_MASK,
+                maskImage: HEART_MASK,
+                WebkitMaskSize: "40% 40%",
+                maskSize: "40% 40%",
+                WebkitMaskRepeat: "no-repeat",
+                maskRepeat: "no-repeat",
+                WebkitMaskPosition: "center",
+                maskPosition: "center",
+                background: "#fdf1ee",
+              }}
+            />
+          </div>
+        )}
+      </div>
+
+      {phase === "closed" && (
+        <div className="absolute inset-x-0 -bottom-6 text-center pointer-events-none">
+          <span className="label-caps">Tap to open</span>
+        </div>
+      )}
+
+      {portal}
+    </div>
+  );
+}
+
+function MapBody({ el }: { el: MapElement }) {
+  return (
+    <div 
+      className="w-full h-full bg-paper overflow-hidden relative shadow-md pointer-events-none"
+      style={{
+        borderRadius: 16,
+        borderWidth: el.borderW ?? 0,
+        borderColor: el.borderColor ?? "transparent",
+        borderStyle: "solid"
+      }}
+    >
+      <iframe
+        width="100%"
+        height="100%"
+        style={{ border: 0, pointerEvents: "auto" }}
+        loading="lazy"
+        allowFullScreen
+        src={`https://www.google.com/maps?q=${encodeURIComponent(el.query || "Paris")}&output=embed`}
+      />
+    </div>
+  );
+}
+
+export function ElementBody({ el, animate }: { el: PageElement; animate: boolean }) {
+  if (el.type === "photo") return <PhotoBody el={el} animate={animate} />;
   if (el.type === "text") return <TextBody el={el} />;
   if (el.type === "shape") return <ShapeBody el={el} />;
   if (el.type === "video") return <VideoBody el={el} />;
+  if (el.type === "audio") return <AudioBody el={el} />;
+  if (el.type === "envelope") return <EnvelopeBody el={el} animate={animate} />;
+  if (el.type === "map") return <MapBody el={el} />;
   return (
     <div
       className="w-full h-full flex items-center justify-center select-none"
@@ -519,13 +831,18 @@ export function ElementBody({ el }: { el: PageElement }) {
 export default function PageRenderer({ data, animate = false }: { data: PageData; animate?: boolean }) {
   const sorted = [...data.elements].sort((a, b) => a.z - b.z);
   const isAnimatedBg = data.background.includes("Animated");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   
   return (
     <div
       className={`relative overflow-hidden ${isAnimatedBg ? "bg-[length:200%_200%] animate-[os-gradient-pan_8s_ease_infinite]" : ""}`}
       style={{ width: PAGE_W, height: PAGE_H, background: data.background }}
     >
-      {data.effect && data.effect !== "none" && <EffectLayer effect={data.effect} />}
+      {mounted && data.effect && data.effect !== "none" && <EffectLayer effect={data.effect} />}
       {sorted.map((el, i) => {
         const entrance = animate && el.anim && el.anim !== "none" ? ENTRANCES[el.anim] : null;
         return (
@@ -546,10 +863,10 @@ export default function PageRenderer({ data, animate = false }: { data: PageData
                       }),
                 }}
               >
-                <ElementBody el={el} />
+                <ElementBody el={el} animate={animate} />
               </motion.div>
             ) : (
-              <ElementBody el={el} />
+              <ElementBody el={el} animate={animate} />
             )}
           </div>
         );

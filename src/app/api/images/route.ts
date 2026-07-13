@@ -19,10 +19,11 @@ export async function POST(req: Request) {
   }
   const isImage = file.type.startsWith("image/");
   const isVideo = file.type.startsWith("video/");
-  if (!isImage && !isVideo) {
-    return NextResponse.json({ error: "Only images and videos are allowed" }, { status: 400 });
+  const isAudio = file.type.startsWith("audio/");
+  if (!isImage && !isVideo && !isAudio) {
+    return NextResponse.json({ error: "Only images, videos, and audio are allowed" }, { status: 400 });
   }
-  const max = isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+  const max = isVideo ? MAX_VIDEO_BYTES : isAudio ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
   if (file.size > max) {
     return NextResponse.json(
       { error: `Too large (max ${Math.round(max / (1024 * 1024))} MB)` },
@@ -31,8 +32,8 @@ export async function POST(req: Request) {
   }
 
   const id = nanoid(16);
-  const ext = extForMime(file.type, isVideo ? "mp4" : "jpg");
-  const kind = isVideo ? "video" : "image";
+  const ext = extForMime(file.type, isVideo ? "mp4" : isAudio ? "mp3" : "jpg");
+  const kind = isVideo ? "video" : isAudio ? "audio" : "image";
   const buf = Buffer.from(await file.arrayBuffer());
 
   // 1. Write DB row first (fast, sync).

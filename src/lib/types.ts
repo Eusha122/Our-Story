@@ -93,6 +93,8 @@ export interface PhotoElement extends ElementBase {
   /** Border for plain/rounded/circle frames. */
   borderW?: number;
   borderColor?: string;
+  /** Scratch-off surprise effect */
+  scratchOff?: boolean;
 }
 
 export type ShapeKind = "rect" | "circle" | "heart" | "line" | "tape";
@@ -181,7 +183,29 @@ export interface VideoElement extends ElementBase {
   borderColor?: string;
 }
 
-export type PageElement = PhotoElement | TextElement | StickerElement | ShapeElement | VideoElement;
+export interface AudioElement extends ElementBase {
+  type: "audio";
+  src: string;
+  autoplay?: boolean;
+  loop?: boolean;
+}
+
+export interface EnvelopeElement extends ElementBase {
+  type: "envelope";
+  envelopeText?: string;
+  envelopeSrc?: string;
+  cardBackColor?: string;
+  envelopeColor?: string;
+}
+
+export interface MapElement extends ElementBase {
+  type: "map";
+  query: string;
+  borderW?: number;
+  borderColor?: string;
+}
+
+export type PageElement = PhotoElement | TextElement | StickerElement | ShapeElement | VideoElement | AudioElement | EnvelopeElement | MapElement;
 
 /** Animated ambient layer rendered behind the page's elements. */
 export type PageEffect = "none" | "glow" | "hearts" | "sparkles" | "bokeh" | "snow" | "bubbles" | "confetti" | "stars";
