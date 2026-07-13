@@ -28,7 +28,42 @@ import {
   type TextFont,
   type Transition,
 } from "@/lib/types";
-import PageRenderer, { ElementBody, elementStyle, FONT_MAP, ENTRANCES } from "@/components/PageRenderer";
+import PageRenderer, {
+  ElementBody,
+  elementStyle,
+  FONT_MAP,
+  ENTRANCES,
+  isGradient,
+  buildGradient,
+  parseGradient,
+  firstSolid,
+} from "@/components/PageRenderer";
+import {
+  ImageIcon,
+  VideoIcon,
+  TypeIcon,
+  ShapeRectIcon,
+  ShapeCircleIcon,
+  ShapeHeartIcon,
+  ShapeLineIcon,
+  ShapeTapeIcon,
+  SmileIcon,
+  FlipHorizontalIcon,
+  ShadowIcon,
+  AlignLeftIcon,
+  AlignCenterIcon,
+  AlignRightIcon,
+  ArrowUpIcon,
+  ArrowDownIcon,
+  DuplicateIcon,
+  RotateIcon,
+  TrashIcon,
+  CenterHIcon,
+  CenterVIcon,
+  PlusIcon,
+  CloseIcon,
+  PlayIcon,
+} from "@/components/editor/icons";
 
 /* ------------------------------------------------------------------ */
 /* constants                                                           */
@@ -72,23 +107,34 @@ const SHAPE_DEFAULTS: Record<ShapeKind, { w: number; h: number; fill: string; ra
   tape: { w: 280, h: 74, fill: "#d6b18a", opacity: 0.55, rotation: -5, radius: 2 },
 };
 
-const SHAPE_ICONS: Record<ShapeKind, string> = {
-  rect: "▭",
-  circle: "◯",
-  heart: "♥",
-  line: "—",
-  tape: "▰",
+const SHAPE_ICONS: Record<ShapeKind, (p: { size?: number }) => React.ReactElement> = {
+  rect: ShapeRectIcon,
+  circle: ShapeCircleIcon,
+  heart: ShapeHeartIcon,
+  line: ShapeLineIcon,
+  tape: ShapeTapeIcon,
 };
+
+const GRADIENT_PRESETS = [
+  "linear-gradient(135deg, #f7c5c8, #f4e2c9)",
+  "linear-gradient(135deg, #f5b3c6, #b8c8f0)",
+  "linear-gradient(135deg, #cbb3e0, #f5b3b8)",
+  "linear-gradient(135deg, #a8d8c9, #dfe8f2)",
+  "linear-gradient(135deg, #f0d9a8, #e8a0a8)",
+  "linear-gradient(135deg, #2b2620, #6e5a52)",
+];
 
 const selectCls =
   "border border-hairline rounded-md px-2 py-1.5 text-sm bg-paper text-ink outline-none focus:border-accent";
 const inputCls =
   "w-full border border-hairline rounded-md px-2 py-1.5 text-sm outline-none focus:border-accent";
 const toolBtn =
-  "shrink-0 h-8 px-2 text-xs border rounded-md transition-colors flex items-center justify-center";
+  "shrink-0 h-9 px-2 text-xs font-medium border rounded-lg transition-colors flex items-center justify-center";
 
 function tb(active: boolean) {
-  return `${toolBtn} ${active ? "border-accent text-accent" : "border-hairline hover:border-ink-soft"}`;
+  return `${toolBtn} ${
+    active ? "border-accent bg-accent-soft text-accent" : "border-hairline text-ink hover:border-ink-soft hover:bg-canvas-bg"
+  }`;
 }
 
 function clamp(v: number, min: number, max: number) {
@@ -168,14 +214,27 @@ function ColorPicker({
   value,
   onChange,
   suggestions,
+  allowGradient,
 }: {
   value: string;
   onChange: (c: string) => void;
   suggestions: string[];
+  allowGradient?: boolean;
 }) {
-  const [hsv, setHsv] = useState(() => hexToHsv(value) ?? { h: 348, s: 0.35, v: 0.92 });
-  const [hexText, setHexText] = useState(value);
+  const [mode, setMode] = useState<"solid" | "gradient">(isGradient(value) ? "gradient" : "solid");
+  const [lastSolid, setLastSolid] = useState(() => (isGradient(value) ? "#b76e79" : value));
+  const [grad, setGrad] = useState(() => parseGradient(isGradient(value) ? value : GRADIENT_PRESETS[0]));
+  const [hsv, setHsv] = useState(() => hexToHsv(lastSolid) ?? { h: 348, s: 0.35, v: 0.92 });
+  const [hexText, setHexText] = useState(lastSolid);
   const svRef = useRef<HTMLDivElement>(null);
+
+  const applyGrad = useCallback(
+    (next: { angle: number; c1: string; c2: string }) => {
+      setGrad(next);
+      onChange(buildGradient(next.angle, next.c1, next.c2));
+    },
+    [onChange]
+  );
 
   const commit = useCallback(
     (next: { h: number; s: number; v: number }) => {
@@ -212,73 +271,175 @@ function ColorPicker({
 
   return (
     <div className="space-y-3">
-      <div>
-        <div className="label-caps mb-1.5">Suggestions</div>
-        <div className="flex flex-wrap gap-1.5">
-          {suggestions.map((c) => (
-            <button
-              key={c}
-              onClick={() => {
-                onChange(c);
-                setHexText(c);
-                const parsed = hexToHsv(c);
-                if (parsed) setHsv(parsed);
-              }}
-              className={`w-6 h-6 rounded-full border ${
-                value === c ? "ring-2 ring-accent ring-offset-1" : "border-hairline"
-              }`}
-              style={{ background: c }}
-            />
-          ))}
+      {allowGradient && (
+        <div className="flex gap-1 p-0.5 bg-canvas-bg rounded-lg">
+          <button
+            onClick={() => {
+              setMode("solid");
+              onChange(lastSolid);
+            }}
+            className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${
+              mode === "solid" ? "bg-paper shadow-sm text-ink" : "text-ink-soft"
+            }`}
+          >
+            Solid
+          </button>
+          <button
+            onClick={() => {
+              setMode("gradient");
+              applyGrad(grad);
+            }}
+            className={`flex-1 text-xs py-1.5 rounded-md transition-colors ${
+              mode === "gradient" ? "bg-paper shadow-sm text-ink" : "text-ink-soft"
+            }`}
+          >
+            Gradient
+          </button>
         </div>
-      </div>
+      )}
 
-      <div
-        ref={svRef}
-        onPointerDown={handleSv}
-        className="relative h-36 rounded-lg cursor-crosshair touch-none"
-        style={{
-          background: `linear-gradient(to top, #000, rgba(0,0,0,0)), linear-gradient(to right, #fff, hsl(${hsv.h} 100% 50%))`,
-        }}
-      >
-        <div
-          className="absolute w-4 h-4 rounded-full border-2 border-white shadow -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-          style={{
-            left: `${hsv.s * 100}%`,
-            top: `${(1 - hsv.v) * 100}%`,
-            background: hsvToHex(hsv.h, hsv.s, hsv.v),
-          }}
-        />
-      </div>
+      {mode === "gradient" && allowGradient ? (
+        <>
+          <div
+            className="h-12 rounded-lg border border-hairline"
+            style={{ background: buildGradient(grad.angle, grad.c1, grad.c2) }}
+          />
+          <div className="flex gap-3">
+            <label className="flex-1 flex flex-col items-center gap-1">
+              <span className="text-[10px] text-ink-soft">From</span>
+              <span
+                className="w-9 h-9 rounded-full border border-hairline relative overflow-hidden cursor-pointer block"
+                style={{ background: grad.c1 }}
+              >
+                <input
+                  type="color"
+                  value={grad.c1}
+                  onChange={(e) => applyGrad({ ...grad, c1: e.target.value })}
+                  className="absolute inset-0 opacity-0 cursor-pointer"
+                />
+              </span>
+            </label>
+            <label className="flex-1 flex flex-col items-center gap-1">
+              <span className="text-[10px] text-ink-soft">To</span>
+              <span
+                className="w-9 h-9 rounded-full border border-hairline relative overflow-hidden cursor-pointer block"
+                style={{ background: grad.c2 }}
+              >
+                <input
+                  type="color"
+                  value={grad.c2}
+                  onChange={(e) => applyGrad({ ...grad, c2: e.target.value })}
+                  className="absolute inset-0 opacity-0 cursor-pointer"
+                />
+              </span>
+            </label>
+          </div>
+          <div>
+            <div className="text-xs text-ink-soft mb-1">Angle — {grad.angle}°</div>
+            <input
+              type="range"
+              min={0}
+              max={360}
+              value={grad.angle}
+              onChange={(e) => applyGrad({ ...grad, angle: Number(e.target.value) })}
+              className="w-full accent-[#b76e79]"
+            />
+          </div>
+          <div>
+            <div className="label-caps mb-1.5">Presets</div>
+            <div className="flex flex-wrap gap-1.5">
+              {GRADIENT_PRESETS.map((g) => (
+                <button
+                  key={g}
+                  onClick={() => {
+                    const parsed = parseGradient(g);
+                    setGrad(parsed);
+                    onChange(g);
+                  }}
+                  className="w-9 h-7 rounded-md border border-hairline"
+                  style={{ background: g }}
+                />
+              ))}
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div>
+            <div className="label-caps mb-1.5">Suggestions</div>
+            <div className="flex flex-wrap gap-1.5">
+              {suggestions.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => {
+                    onChange(c);
+                    setLastSolid(c);
+                    setHexText(c);
+                    const parsed = hexToHsv(c);
+                    if (parsed) setHsv(parsed);
+                  }}
+                  className={`w-6 h-6 rounded-full border ${
+                    value === c ? "ring-2 ring-accent ring-offset-1" : "border-hairline"
+                  }`}
+                  style={{ background: c }}
+                />
+              ))}
+            </div>
+          </div>
 
-      <input
-        type="range"
-        min={0}
-        max={360}
-        value={Math.round(hsv.h)}
-        onChange={(e) => commit({ ...hsv, h: Number(e.target.value) })}
-        className="w-full h-3 rounded-full appearance-none cursor-pointer"
-        style={{
-          background: "linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)",
-        }}
-      />
+          <div
+            ref={svRef}
+            onPointerDown={handleSv}
+            className="relative h-36 rounded-lg cursor-crosshair touch-none"
+            style={{
+              background: `linear-gradient(to top, #000, rgba(0,0,0,0)), linear-gradient(to right, #fff, hsl(${hsv.h} 100% 50%))`,
+            }}
+          >
+            <div
+              className="absolute w-4 h-4 rounded-full border-2 border-white shadow -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+              style={{
+                left: `${hsv.s * 100}%`,
+                top: `${(1 - hsv.v) * 100}%`,
+                background: hsvToHex(hsv.h, hsv.s, hsv.v),
+              }}
+            />
+          </div>
 
-      <div className="flex items-center gap-2">
-        <div className="w-8 h-8 rounded-md border border-hairline shrink-0" style={{ background: value }} />
-        <input
-          value={hexText}
-          onChange={(e) => {
-            setHexText(e.target.value);
-            const parsed = hexToHsv(e.target.value);
-            if (parsed) {
-              setHsv(parsed);
-              onChange(e.target.value.startsWith("#") ? e.target.value : `#${e.target.value}`);
-            }
-          }}
-          spellCheck={false}
-          className={`${inputCls} font-mono text-xs`}
-        />
-      </div>
+          <input
+            type="range"
+            min={0}
+            max={360}
+            value={Math.round(hsv.h)}
+            onChange={(e) => {
+              commit({ ...hsv, h: Number(e.target.value) });
+              setLastSolid(hsvToHex(Number(e.target.value), hsv.s, hsv.v));
+            }}
+            className="w-full h-3 rounded-full appearance-none cursor-pointer"
+            style={{
+              background: "linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)",
+            }}
+          />
+
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-md border border-hairline shrink-0" style={{ background: value }} />
+            <input
+              value={hexText}
+              onChange={(e) => {
+                setHexText(e.target.value);
+                const parsed = hexToHsv(e.target.value);
+                if (parsed) {
+                  setHsv(parsed);
+                  const hex = e.target.value.startsWith("#") ? e.target.value : `#${e.target.value}`;
+                  setLastSolid(hex);
+                  onChange(hex);
+                }
+              }}
+              spellCheck={false}
+              className={`${inputCls} font-mono text-xs`}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -290,6 +451,7 @@ function ColorChip({
   title,
   allowNone,
   onNone,
+  allowGradient,
   size = 7,
 }: {
   value: string | undefined;
@@ -298,6 +460,7 @@ function ColorChip({
   title: string;
   allowNone?: boolean;
   onNone?: () => void;
+  allowGradient?: boolean;
   size?: 7 | 8;
 }) {
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
@@ -306,10 +469,10 @@ function ColorChip({
       <button
         title={title}
         onClick={(e) => setAnchor(e.currentTarget.getBoundingClientRect())}
-        className={`${size === 8 ? "w-8 h-8" : "w-7 h-7"} shrink-0 rounded-full border border-hairline flex items-center justify-center text-[10px] text-ink-soft`}
+        className={`${size === 8 ? "w-8 h-8" : "w-7 h-7"} shrink-0 rounded-full border border-hairline flex items-center justify-center text-ink-soft`}
         style={{ background: value || undefined }}
       >
-        {!value && "✕"}
+        {!value && <CloseIcon size={11} />}
       </button>
       {anchor && (
         <Popover anchor={anchor} onClose={() => setAnchor(null)}>
@@ -319,12 +482,17 @@ function ColorChip({
                 onNone?.();
                 setAnchor(null);
               }}
-              className="w-full mb-3 text-xs border border-hairline rounded-md py-1.5 hover:border-accent hover:text-accent"
+              className="w-full mb-3 flex items-center justify-center gap-1.5 text-xs border border-hairline rounded-md py-1.5 hover:border-accent hover:text-accent"
             >
-              ✕ No color
+              <CloseIcon size={12} /> No color
             </button>
           )}
-          <ColorPicker value={value || "#b76e79"} onChange={onChange} suggestions={suggestions} />
+          <ColorPicker
+            value={value || "#b76e79"}
+            onChange={onChange}
+            suggestions={suggestions}
+            allowGradient={allowGradient}
+          />
         </Popover>
       )}
     </>
@@ -446,6 +614,30 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
   const [versions, setVersions] = useState<PageVersion[] | null>(null);
   const [uploading, setUploading] = useState(false);
   const [stickerAnchor, setStickerAnchor] = useState<DOMRect | null>(null);
+  const [storage, setStorage] = useState<{ bytes: number; count: number; capBytes: number } | null>(null);
+  // Detect narrow phones so we can show a "use desktop" nudge.
+  const [isNarrow, setIsNarrow] = useState(false);
+  const [narrowDismissed, setNarrowDismissed] = useState(false);
+  useEffect(() => {
+    const check = () => setIsNarrow(window.innerWidth < 640);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+  // Mobile FAB
+  const [fabOpen, setFabOpen] = useState(false);
+  const [mobileStickerOpen, setMobileStickerOpen] = useState(false);
+
+  const refreshStorage = useCallback(() => {
+    fetch("/api/storage")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((s) => s && setStorage(s))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshStorage();
+  }, [refreshStorage]);
 
   const page = pages.find((p) => p.id === currentId) ?? null;
   const selected = page?.data.elements.find((el) => el.id === selectedId) ?? null;
@@ -575,6 +767,12 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
     },
     [mutateElement]
   );
+  const setVideo = useCallback(
+    (id: string, patch: Record<string, unknown>) => {
+      mutateElement(id, (el) => (el.type === "video" ? ({ ...el, ...patch } as PageElement) : el));
+    },
+    [mutateElement]
+  );
 
   const switchPage = useCallback(
     (id: string | null) => {
@@ -661,6 +859,50 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
   );
 
   const fileInput = useRef<HTMLInputElement>(null);
+  const videoInput = useRef<HTMLInputElement>(null);
+
+  const addVideos = useCallback(
+    async (files: FileList) => {
+      if (!page) return;
+      setUploading(true);
+      try {
+        let offset = 0;
+        for (const file of Array.from(files)) {
+          const fd = new FormData();
+          fd.append("file", file);
+          const res = await fetch("/api/images", { method: "POST", body: fd });
+          if (!res.ok) {
+            const body = (await res.json().catch(() => null)) as { error?: string } | null;
+            alert(body?.error ?? "Upload failed");
+            continue;
+          }
+          const { url } = (await res.json()) as { url: string };
+          const w = 480;
+          const h = 480 * (9 / 16);
+          const el: PageElement = {
+            id: nanoid(8),
+            type: "video",
+            x: PAGE_W / 2 - w / 2 + offset,
+            y: PAGE_H / 2 - h / 2 + offset,
+            w,
+            h,
+            rotation: 0,
+            z: nextZ() + offset / 30,
+            src: url,
+            frame: "rounded",
+            controls: true,
+          };
+          mutateData((d) => ({ ...d, elements: [...d.elements, el] }));
+          setSelectedId(el.id);
+          offset += 30;
+        }
+      } finally {
+        setUploading(false);
+        refreshStorage();
+      }
+    },
+    [page, nextZ, mutateData, refreshStorage]
+  );
 
   const addPhotos = useCallback(
     async (files: FileList) => {
@@ -672,7 +914,11 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
           const fd = new FormData();
           fd.append("file", file);
           const res = await fetch("/api/images", { method: "POST", body: fd });
-          if (!res.ok) continue;
+          if (!res.ok) {
+            const body = (await res.json().catch(() => null)) as { error?: string } | null;
+            alert(body?.error ?? "Upload failed");
+            continue;
+          }
           const { url } = (await res.json()) as { url: string };
           const ratio = await new Promise<number>((resolve) => {
             const img = new window.Image();
@@ -701,18 +947,30 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
         }
       } finally {
         setUploading(false);
+        refreshStorage();
       }
     },
-    [page, nextZ, mutateData]
+    [page, nextZ, mutateData, refreshStorage]
   );
 
   /* ---------------- element actions ---------------- */
 
   const removeSelected = useCallback(() => {
-    if (!selectedId) return;
-    mutateData((d) => ({ ...d, elements: d.elements.filter((el) => el.id !== selectedId) }));
+    if (!selectedId || !page) return;
+    // If the element owns a media file, delete it from the server.
+    const el = page.data.elements.find((e) => e.id === selectedId);
+    if (el && (el.type === "photo" || el.type === "video") && el.src) {
+      const mediaId = el.src.split("/").pop();
+      if (mediaId) {
+        fetch(`/api/images/${mediaId}`, { method: "DELETE" })
+          .then(() => refreshStorage())
+          .catch(() => {});
+      }
+    }
+    mutateData((d) => ({ ...d, elements: d.elements.filter((e) => e.id !== selectedId) }));
     setSelectedId(null);
-  }, [selectedId, mutateData]);
+  }, [selectedId, page, mutateData, refreshStorage]);
+
 
   const duplicateSelected = useCallback(() => {
     if (!selected) return;
@@ -845,17 +1103,17 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
   );
 
   const startResize = useCallback(
-    (e: React.PointerEvent, el: PageElement, corner: "nw" | "ne" | "sw" | "se") => {
+    (e: React.PointerEvent, el: PageElement, dir: "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se") => {
       const { x, y, w, h } = el;
       trackPointer(e, (dxRaw, dyRaw) => {
         const s = scaleRef.current;
         const dx = dxRaw / s;
         const dy = dyRaw / s;
         let nx = x, ny = y, nw = w, nh = h;
-        if (corner.includes("e")) nw = w + dx;
-        if (corner.includes("s")) nh = h + dy;
-        if (corner.includes("w")) { nw = w - dx; nx = x + dx; }
-        if (corner.includes("n")) { nh = h - dy; ny = y + dy; }
+        if (dir.includes("e")) nw = w + dx;
+        if (dir.includes("s")) nh = h + dy;
+        if (dir.includes("w")) { nw = w - dx; nx = x + dx; }
+        if (dir.includes("n")) { nh = h - dy; ny = y + dy; }
         if (nw < 40 || nh < 40) return;
         mutateElement(el.id, (cur) => ({ ...cur, x: nx, y: ny, w: nw, h: nh }));
       });
@@ -903,6 +1161,19 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
 
   return (
     <div className="flex-1 flex flex-col h-screen overflow-hidden bg-canvas-bg">
+      {/* Mobile nudge — shown on phones, dismissible */}
+      {isNarrow && !narrowDismissed && (
+        <div className="bg-accent text-paper text-xs px-4 py-2.5 flex items-center justify-between gap-3 shrink-0">
+          <span>📱 The editor works best on a tablet or desktop — rotate your phone or switch devices for the full experience.</span>
+          <button
+            onClick={() => setNarrowDismissed(true)}
+            aria-label="Dismiss"
+            className="shrink-0 opacity-80 hover:opacity-100 text-base leading-none"
+          >
+            ×
+          </button>
+        </div>
+      )}
       {/* Top bar */}
       <header className="flex items-center gap-4 px-4 h-12 bg-paper border-b border-hairline shrink-0">
         <span className="font-[family-name:var(--font-script)] text-accent text-2xl leading-none">
@@ -910,12 +1181,20 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
         </span>
         <span className="label-caps hidden sm:inline">Editor</span>
         <div className="flex-1" />
+        {storage && (
+          <span
+            title="Storage used on your server"
+            className="text-xs text-ink-soft hidden md:inline"
+          >
+            {(storage.bytes / 1024 ** 3).toFixed(1)} GB / {(storage.capBytes / 1024 ** 3).toFixed(0)} GB
+          </span>
+        )}
         <span
           className={`text-xs ${
             saveState === "error" ? "text-red-500" : saveState === "saved" ? "text-ink-soft" : "text-accent"
           }`}
         >
-          {uploading ? "Uploading photo…" : saveLabel}
+          {uploading ? "Uploading…" : saveLabel}
         </span>
         <button
           onClick={openHistory}
@@ -933,25 +1212,34 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
         </Link>
       </header>
 
-      {/* Contextual toolbar (Canva-style) */}
-      <div className="flex items-center gap-1.5 px-3 h-12 bg-paper border-b border-hairline shrink-0 overflow-x-auto no-scrollbar">
+      {/* Contextual toolbar — desktop / tablet only; mobile uses the FAB below */}
+      <div className="hidden md:flex items-center gap-1.5 px-3 h-14 bg-paper border-b border-hairline shrink-0 overflow-x-auto no-scrollbar">
         {page && !selected && (
           <>
-            <button onClick={() => fileInput.current?.click()} className={tb(false)}>
-              🖼 Photo
+            <button onClick={() => fileInput.current?.click()} className={`${tb(false)} gap-1.5 px-3`}>
+              <ImageIcon size={17} /> Photo
             </button>
-            <button onClick={addText} className={tb(false)}>
-              T Text
+            <button onClick={() => videoInput.current?.click()} className={`${tb(false)} gap-1.5 px-3`}>
+              <VideoIcon size={17} /> Video
             </button>
-            <span className="w-px h-6 bg-hairline mx-1 shrink-0" />
-            {SHAPES.map((s) => (
-              <button key={s.value} title={s.label} onClick={() => addShape(s.value)} className={`${tb(false)} w-9`}>
-                {SHAPE_ICONS[s.value]}
-              </button>
-            ))}
-            <span className="w-px h-6 bg-hairline mx-1 shrink-0" />
-            <button onClick={(e) => setStickerAnchor(e.currentTarget.getBoundingClientRect())} className={tb(false)}>
-              😊 Stickers
+            <button onClick={addText} className={`${tb(false)} gap-1.5 px-3`}>
+              <TypeIcon size={17} /> Text
+            </button>
+            <span className="w-px h-7 bg-hairline mx-1 shrink-0" />
+            {SHAPES.map((s) => {
+              const ShapeIcon = SHAPE_ICONS[s.value];
+              return (
+                <button key={s.value} title={s.label} onClick={() => addShape(s.value)} className={`${tb(false)} w-10`}>
+                  <ShapeIcon size={17} />
+                </button>
+              );
+            })}
+            <span className="w-px h-7 bg-hairline mx-1 shrink-0" />
+            <button
+              onClick={(e) => setStickerAnchor(e.currentTarget.getBoundingClientRect())}
+              className={`${tb(false)} gap-1.5 px-3`}
+            >
+              <SmileIcon size={17} /> Stickers
             </button>
             {stickerAnchor && (
               <Popover anchor={stickerAnchor} onClose={() => setStickerAnchor(null)} width={296}>
@@ -985,7 +1273,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                 <select
                   value={selected.font}
                   onChange={(e) => setText(selected.id, { font: e.target.value as TextFont })}
-                  className={`${selectCls} w-32 shrink-0 h-8 py-0`}
+                  className={`${selectCls} w-32 shrink-0 h-9 py-0`}
                   style={{ fontFamily: FONT_MAP[selected.font] }}
                 >
                   {FONTS.map((f) => (
@@ -994,7 +1282,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                     </option>
                   ))}
                 </select>
-                <div className="flex items-center shrink-0 border border-hairline rounded-md h-8">
+                <div className="flex items-center shrink-0 border border-hairline rounded-md h-9">
                   <button
                     onClick={() => setText(selected.id, { size: clamp(selected.size - 2, 8, 300) })}
                     className="w-7 h-full text-ink-soft hover:text-accent"
@@ -1022,19 +1310,24 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                   value={selected.color}
                   suggestions={TEXT_COLORS}
                   onChange={(c) => setText(selected.id, { color: c })}
+                  allowGradient
                   size={8}
                 />
-                <span className="w-px h-6 bg-hairline mx-1 shrink-0" />
-                <button onClick={() => setText(selected.id, { bold: !selected.bold })} className={`${tb(!!selected.bold)} w-8 font-bold`}>B</button>
-                <button onClick={() => setText(selected.id, { italic: !selected.italic })} className={`${tb(!!selected.italic)} w-8 italic`}>I</button>
-                <button onClick={() => setText(selected.id, { underline: !selected.underline })} className={`${tb(!!selected.underline)} w-8 underline`}>U</button>
+                <span className="w-px h-7 bg-hairline mx-1 shrink-0" />
+                <button onClick={() => setText(selected.id, { bold: !selected.bold })} className={`${tb(!!selected.bold)} w-9 font-bold`}>B</button>
+                <button onClick={() => setText(selected.id, { italic: !selected.italic })} className={`${tb(!!selected.italic)} w-9 italic`}>I</button>
+                <button onClick={() => setText(selected.id, { underline: !selected.underline })} className={`${tb(!!selected.underline)} w-9 underline`}>U</button>
                 <button onClick={() => setText(selected.id, { uppercase: !selected.uppercase })} className={`${tb(!!selected.uppercase)} w-9 tracking-widest`}>AA</button>
-                <span className="w-px h-6 bg-hairline mx-1 shrink-0" />
-                {(["left", "center", "right"] as const).map((a) => (
-                  <button key={a} onClick={() => setText(selected.id, { align: a })} className={`${tb(selected.align === a)} w-8`}>
-                    {a === "left" ? "⟸" : a === "center" ? "≡" : "⟹"}
-                  </button>
-                ))}
+                <span className="w-px h-7 bg-hairline mx-1 shrink-0" />
+                <button onClick={() => setText(selected.id, { align: "left" })} className={`${tb(selected.align === "left")} w-9`}>
+                  <AlignLeftIcon size={17} />
+                </button>
+                <button onClick={() => setText(selected.id, { align: "center" })} className={`${tb(selected.align === "center")} w-9`}>
+                  <AlignCenterIcon size={17} />
+                </button>
+                <button onClick={() => setText(selected.id, { align: "right" })} className={`${tb(selected.align === "right")} w-9`}>
+                  <AlignRightIcon size={17} />
+                </button>
               </>
             )}
 
@@ -1043,7 +1336,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                 <select
                   value={selected.frame}
                   onChange={(e) => setPhoto(selected.id, { frame: e.target.value as PhotoFrame })}
-                  className={`${selectCls} w-28 shrink-0 h-8 py-0`}
+                  className={`${selectCls} w-28 shrink-0 h-9 py-0`}
                 >
                   {FRAMES.map((f) => (
                     <option key={f.value} value={f.value}>{f.label}</option>
@@ -1052,15 +1345,19 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                 <select
                   value={selected.filter ?? "none"}
                   onChange={(e) => setPhoto(selected.id, { filter: e.target.value as PhotoFilter })}
-                  className={`${selectCls} w-28 shrink-0 h-8 py-0`}
+                  className={`${selectCls} w-28 shrink-0 h-9 py-0`}
                 >
                   {PHOTO_FILTERS.map((f) => (
                     <option key={f.value} value={f.value}>{f.label}</option>
                   ))}
                 </select>
-                <span className="w-px h-6 bg-hairline mx-1 shrink-0" />
-                <button onClick={() => setPhoto(selected.id, { flip: !selected.flip })} className={tb(!!selected.flip)}>⇋ Flip</button>
-                <button onClick={() => setPhoto(selected.id, { shadow: selected.shadow === false ? true : false })} className={tb(selected.shadow !== false)}>Shadow</button>
+                <span className="w-px h-7 bg-hairline mx-1 shrink-0" />
+                <button onClick={() => setPhoto(selected.id, { flip: !selected.flip })} className={`${tb(!!selected.flip)} gap-1.5 px-3`}>
+                  <FlipHorizontalIcon size={17} /> Flip
+                </button>
+                <button onClick={() => setPhoto(selected.id, { shadow: selected.shadow === false ? true : false })} className={`${tb(selected.shadow !== false)} gap-1.5 px-3`}>
+                  <ShadowIcon size={17} /> Shadow
+                </button>
               </>
             )}
 
@@ -1072,6 +1369,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                   value={selected.fill}
                   suggestions={FILL_COLORS}
                   onChange={(c) => setShape(selected.id, { fill: c })}
+                  allowGradient
                   size={8}
                 />
               </>
@@ -1081,13 +1379,29 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
               <span className="text-lg shrink-0">{selected.emoji}</span>
             )}
 
+            {selected.type === "video" && (
+              <span className="flex items-center gap-1.5 text-xs text-ink-soft shrink-0">
+                <VideoIcon size={16} /> Video clip
+              </span>
+            )}
+
             <div className="flex-1" />
-            <span className="w-px h-6 bg-hairline mx-1 shrink-0" />
-            <button title="Bring to front" onClick={() => reorderZ(1)} className={`${tb(false)} w-8`}>⬆</button>
-            <button title="Send to back" onClick={() => reorderZ(-1)} className={`${tb(false)} w-8`}>⬇</button>
-            <button title="Duplicate" onClick={duplicateSelected} className={`${tb(false)} w-8`}>⧉</button>
-            <button title="Straighten" onClick={() => mutateElement(selected.id, (el) => ({ ...el, rotation: 0 }))} className={`${tb(false)} w-8`}>⟲</button>
-            <button title="Delete" onClick={removeSelected} className={`${toolBtn} w-8 border-hairline text-red-400 hover:border-red-400`}>🗑</button>
+            <span className="w-px h-7 bg-hairline mx-1 shrink-0" />
+            <button title="Bring to front" onClick={() => reorderZ(1)} className={`${tb(false)} w-9`}>
+              <ArrowUpIcon size={17} />
+            </button>
+            <button title="Send to back" onClick={() => reorderZ(-1)} className={`${tb(false)} w-9`}>
+              <ArrowDownIcon size={17} />
+            </button>
+            <button title="Duplicate" onClick={duplicateSelected} className={`${tb(false)} w-9`}>
+              <DuplicateIcon size={17} />
+            </button>
+            <button title="Straighten" onClick={() => mutateElement(selected.id, (el) => ({ ...el, rotation: 0 }))} className={`${tb(false)} w-9`}>
+              <RotateIcon size={17} />
+            </button>
+            <button title="Delete" onClick={removeSelected} className={`${toolBtn} w-9 border-hairline text-red-400 hover:border-red-400`}>
+              <TrashIcon size={17} />
+            </button>
           </>
         )}
       </div>
@@ -1100,6 +1414,17 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
         className="hidden"
         onChange={(e) => {
           if (e.target.files?.length) void addPhotos(e.target.files);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={videoInput}
+        type="file"
+        accept="video/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files?.length) void addVideos(e.target.files);
           e.target.value = "";
         }}
       />
@@ -1124,18 +1449,24 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                 {i + 1}. {p.title}
               </div>
               <div className="absolute top-1 right-1 flex-col gap-1 hidden group-hover:flex">
-                <button title="Move up" onClick={() => movePage(p.id, -1)} className="w-5 h-5 text-[10px] bg-paper/90 border border-hairline rounded hover:text-accent">↑</button>
-                <button title="Move down" onClick={() => movePage(p.id, 1)} className="w-5 h-5 text-[10px] bg-paper/90 border border-hairline rounded hover:text-accent">↓</button>
-                <button title="Delete page" onClick={() => removePage(p.id)} className="w-5 h-5 text-[10px] bg-paper/90 border border-hairline rounded hover:text-red-500">×</button>
+                <button title="Move up" onClick={() => movePage(p.id, -1)} className="w-5 h-5 flex items-center justify-center bg-paper/90 border border-hairline rounded hover:text-accent">
+                  <ArrowUpIcon size={11} />
+                </button>
+                <button title="Move down" onClick={() => movePage(p.id, 1)} className="w-5 h-5 flex items-center justify-center bg-paper/90 border border-hairline rounded hover:text-accent">
+                  <ArrowDownIcon size={11} />
+                </button>
+                <button title="Delete page" onClick={() => removePage(p.id)} className="w-5 h-5 flex items-center justify-center bg-paper/90 border border-hairline rounded hover:text-red-500">
+                  <CloseIcon size={11} />
+                </button>
               </div>
             </div>
           ))}
           <button
             onClick={addPage}
-            className="shrink-0 rounded-lg border-2 border-dashed border-hairline text-ink-soft hover:border-accent hover:text-accent transition-colors text-2xl"
+            className="shrink-0 rounded-lg border-2 border-dashed border-hairline text-ink-soft hover:border-accent hover:text-accent transition-colors flex items-center justify-center"
             style={{ width: 96, height: 128 }}
           >
-            +
+            <PlusIcon size={26} />
           </button>
         </aside>
 
@@ -1184,7 +1515,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                               style={{
                                 fontFamily: FONT_MAP[el.font] ?? FONT_MAP.serif,
                                 fontSize: el.size,
-                                color: el.color,
+                                color: firstSolid(el.color),
                                 textAlign: el.align,
                                 fontWeight: el.bold ? 700 : 400,
                                 fontStyle: el.italic ? "italic" : "normal",
@@ -1214,17 +1545,52 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
 
                           {isSelected && !isEditing && (
                             <>
-                              <div className="absolute -inset-1 border-2 border-accent pointer-events-none rounded-sm" />
+                              {/* Flush selection outline — sits exactly on the element's bounds */}
+                              <div className="absolute inset-0 border-2 border-accent pointer-events-none rounded-sm" />
+
+                              {/* Edge strips: grab anywhere along a side to resize that one axis */}
+                              {(["n", "s"] as const).map((d) => (
+                                <div
+                                  key={d}
+                                  onPointerDown={(e) => startResize(e, el, d)}
+                                  className="absolute"
+                                  style={{
+                                    left: 14,
+                                    right: 14,
+                                    height: 16,
+                                    top: d === "n" ? -8 : undefined,
+                                    bottom: d === "s" ? -8 : undefined,
+                                    cursor: "ns-resize",
+                                  }}
+                                />
+                              ))}
+                              {(["e", "w"] as const).map((d) => (
+                                <div
+                                  key={d}
+                                  onPointerDown={(e) => startResize(e, el, d)}
+                                  className="absolute"
+                                  style={{
+                                    top: 14,
+                                    bottom: 14,
+                                    width: 16,
+                                    left: d === "w" ? -8 : undefined,
+                                    right: d === "e" ? -8 : undefined,
+                                    cursor: "ew-resize",
+                                  }}
+                                />
+                              ))}
+
+                              {/* Corner handles: flush on the border, drawn after so they win over edge strips */}
                               {(["nw", "ne", "sw", "se"] as const).map((c) => (
                                 <div
                                   key={c}
                                   onPointerDown={(e) => startResize(e, el, c)}
-                                  className="absolute w-6 h-6 bg-paper border-2 border-accent rounded-full"
+                                  className="absolute w-4 h-4 bg-paper border-2 border-accent rounded-full"
                                   style={{
-                                    top: c.includes("n") ? -14 : undefined,
-                                    bottom: c.includes("s") ? -14 : undefined,
-                                    left: c.includes("w") ? -14 : undefined,
-                                    right: c.includes("e") ? -14 : undefined,
+                                    top: c.includes("n") ? -8 : undefined,
+                                    bottom: c.includes("s") ? -8 : undefined,
+                                    left: c.includes("w") ? -8 : undefined,
+                                    right: c.includes("e") ? -8 : undefined,
                                     cursor: c === "nw" || c === "se" ? "nwse-resize" : "nesw-resize",
                                   }}
                                 />
@@ -1232,9 +1598,9 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                               <div
                                 onPointerDown={(e) => startRotate(e, el)}
                                 title="Rotate"
-                                className="absolute left-1/2 -translate-x-1/2 -top-14 w-7 h-7 bg-paper border-2 border-accent rounded-full cursor-grab flex items-center justify-center text-accent text-xs"
+                                className="absolute left-1/2 -translate-x-1/2 -top-12 w-7 h-7 bg-paper border-2 border-accent rounded-full cursor-grab flex items-center justify-center text-accent"
                               >
-                                ⟳
+                                <RotateIcon size={14} />
                               </div>
                             </>
                           )}
@@ -1302,9 +1668,10 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                   ))}
                   <ColorChip
                     title="Custom background color"
-                    value={/^#/.test(page.data.background) ? page.data.background : undefined}
+                    value={page.data.background}
                     suggestions={["#ffffff", "#fdf9f4", "#fbf3f2", "#f4f6f3", "#f3f5f8", "#fff8ec"]}
                     onChange={(c) => mutateData((d) => ({ ...d, background: c }))}
+                    allowGradient
                   />
                 </div>
               </Field>
@@ -1329,6 +1696,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                         onChange={(c) => setText(selected.id, { bg: c })}
                         allowNone
                         onNone={() => setText(selected.id, { bg: undefined })}
+                        allowGradient
                       />
                       {selected.bg && (
                         <select
@@ -1403,6 +1771,77 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                           </div>
                         )}
                       </>
+                    )}
+                  </>
+                )}
+
+                {selected.type === "video" && (
+                  <>
+                    <Field label="Frame">
+                      <div className="flex gap-1">
+                        {(["plain", "rounded"] as const).map((f) => (
+                          <button
+                            key={f}
+                            onClick={() => setVideo(selected.id, { frame: f })}
+                            className={`flex-1 text-xs border rounded-md py-1.5 capitalize ${
+                              selected.frame === f ? "border-accent text-accent" : "border-hairline hover:border-ink-soft"
+                            }`}
+                          >
+                            {f}
+                          </button>
+                        ))}
+                      </div>
+                    </Field>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => setVideo(selected.id, { controls: selected.controls === false })}
+                        className={`flex-1 text-xs border rounded-md py-1.5 ${selected.controls !== false ? "border-accent text-accent" : "border-hairline"}`}
+                      >
+                        Controls
+                      </button>
+                      <button
+                        onClick={() => setVideo(selected.id, { loop: !selected.loop })}
+                        className={`flex-1 text-xs border rounded-md py-1.5 ${selected.loop ? "border-accent text-accent" : "border-hairline"}`}
+                      >
+                        Loop
+                      </button>
+                      <button
+                        onClick={() => setVideo(selected.id, { muted: !selected.muted })}
+                        className={`flex-1 text-xs border rounded-md py-1.5 ${selected.muted ? "border-accent text-accent" : "border-hairline"}`}
+                      >
+                        Muted
+                      </button>
+                    </div>
+                    <div>
+                      <button
+                        onClick={() => setVideo(selected.id, { autoplay: !selected.autoplay })}
+                        className={`w-full text-xs border rounded-md py-1.5 ${selected.autoplay ? "border-accent text-accent" : "border-hairline"}`}
+                      >
+                        Autoplay when page opens
+                      </button>
+                      {selected.autoplay && !selected.muted && (
+                        <p className="text-[11px] text-ink-soft mt-1">
+                          Most browsers block autoplay with sound — turn on Muted too if it should play automatically.
+                        </p>
+                      )}
+                    </div>
+                    <Slider
+                      label={`Border — ${selected.borderW ?? 0}px`}
+                      min={0}
+                      max={24}
+                      value={selected.borderW ?? 0}
+                      onChange={(v) => setVideo(selected.id, { borderW: v })}
+                    />
+                    {(selected.borderW ?? 0) > 0 && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-ink-soft">Border color</span>
+                        <ColorChip
+                          title="Border color"
+                          value={selected.borderColor ?? "#ffffff"}
+                          suggestions={BORDER_COLORS}
+                          onChange={(c) => setVideo(selected.id, { borderColor: c })}
+                        />
+                      </div>
                     )}
                   </>
                 )}
@@ -1514,17 +1953,17 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                   </label>
                   <button
                     onClick={() => mutateElement(selected.id, (el) => ({ ...el, x: (PAGE_W - el.w) / 2 }))}
-                    className="flex-1 text-[10px] border border-hairline rounded-md py-1.5 hover:border-accent hover:text-accent"
+                    className="flex-1 flex items-center justify-center border border-hairline rounded-md py-1.5 hover:border-accent hover:text-accent"
                     title="Center horizontally"
                   >
-                    ↔ Center
+                    <CenterHIcon size={16} />
                   </button>
                   <button
                     onClick={() => mutateElement(selected.id, (el) => ({ ...el, y: (PAGE_H - el.h) / 2 }))}
-                    className="flex-1 text-[10px] border border-hairline rounded-md py-1.5 hover:border-accent hover:text-accent"
+                    className="flex-1 flex items-center justify-center border border-hairline rounded-md py-1.5 hover:border-accent hover:text-accent"
                     title="Center vertically"
                   >
-                    ↕ Center
+                    <CenterVIcon size={16} />
                   </button>
                 </div>
               </Section>
@@ -1548,9 +1987,9 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                     <button
                       onClick={() => previewAnim(selected.id, selected.anim!)}
                       title="Replay preview"
-                      className="shrink-0 w-9 h-9 border border-hairline rounded-md text-accent hover:border-accent"
+                      className="shrink-0 w-9 h-9 flex items-center justify-center border border-hairline rounded-md text-accent hover:border-accent"
                     >
-                      ▶
+                      <PlayIcon size={14} />
                     </button>
                   )}
                 </div>
@@ -1586,6 +2025,261 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
           )}
         </aside>
       </div>
+
+      {/* ─── Mobile FAB ─────────────────────────────────────────────────────────
+           Only rendered on screens < md (768 px). The desktop toolbar above
+           handles the same actions on larger screens.
+      ──────────────────────────────────────────────────────────────────────── */}
+      {page && (
+        <div
+          className="md:hidden fixed z-50"
+          style={{
+            bottom: "max(1.5rem, calc(env(safe-area-inset-bottom) + 1rem))",
+            right: "1.5rem",
+          }}
+        >
+          {/* Backdrop — closes the panel when tapped outside */}
+          {fabOpen && (
+            <div
+              className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40"
+              onClick={() => { setFabOpen(false); setMobileStickerOpen(false); }}
+            />
+          )}
+
+          {/* Floating options card */}
+          {fabOpen && (
+            <div className="absolute bottom-16 right-0 w-72 bg-paper rounded-2xl shadow-2xl border border-hairline p-4 z-50">
+              {!selected ? (
+                /* ── No element selected: Add-element panel ── */
+                <>
+                  <p className="label-caps mb-3">Add to page</p>
+                  <div className="grid grid-cols-3 gap-2 mb-2">
+                    {/* Photo */}
+                    <button
+                      onClick={() => { fileInput.current?.click(); setFabOpen(false); }}
+                      className="flex flex-col items-center gap-1.5 py-3 rounded-xl border border-hairline text-xs hover:border-accent hover:text-accent transition-colors"
+                    >
+                      <ImageIcon size={20} />
+                      Photo
+                    </button>
+                    {/* Video */}
+                    <button
+                      onClick={() => { videoInput.current?.click(); setFabOpen(false); }}
+                      className="flex flex-col items-center gap-1.5 py-3 rounded-xl border border-hairline text-xs hover:border-accent hover:text-accent transition-colors"
+                    >
+                      <VideoIcon size={20} />
+                      Video
+                    </button>
+                    {/* Text */}
+                    <button
+                      onClick={() => { addText(); setFabOpen(false); }}
+                      className="flex flex-col items-center gap-1.5 py-3 rounded-xl border border-hairline text-xs hover:border-accent hover:text-accent transition-colors"
+                    >
+                      <TypeIcon size={20} />
+                      Text
+                    </button>
+                    {/* Shapes */}
+                    {SHAPES.map((s) => {
+                      const ShapeIcon = SHAPE_ICONS[s.value];
+                      return (
+                        <button
+                          key={s.value}
+                          title={s.label}
+                          onClick={() => { addShape(s.value); setFabOpen(false); }}
+                          className="flex flex-col items-center gap-1.5 py-3 rounded-xl border border-hairline text-xs hover:border-accent hover:text-accent transition-colors"
+                        >
+                          <ShapeIcon size={20} />
+                          {s.label}
+                        </button>
+                      );
+                    })}
+                    {/* Stickers toggle */}
+                    <button
+                      onClick={() => setMobileStickerOpen((v) => !v)}
+                      className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border text-xs transition-colors ${
+                        mobileStickerOpen
+                          ? "border-accent text-accent bg-accent-soft"
+                          : "border-hairline hover:border-accent hover:text-accent"
+                      }`}
+                    >
+                      <SmileIcon size={20} />
+                      Stickers
+                    </button>
+                  </div>
+                  {/* Sticker grid — expands inline when sticker button tapped */}
+                  {mobileStickerOpen && (
+                    <div className="border-t border-hairline pt-3">
+                      <p className="label-caps mb-2">Pick a sticker</p>
+                      <div className="flex flex-wrap gap-1">
+                        {STICKERS.map((s) => (
+                          <button
+                            key={s}
+                            onClick={() => {
+                              addSticker(s);
+                              setFabOpen(false);
+                              setMobileStickerOpen(false);
+                            }}
+                            className="w-10 h-10 text-xl flex items-center justify-center hover:scale-125 transition-transform"
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* ── Element selected: Format + actions panel ── */
+                <>
+                  {/* Utility action row */}
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="label-caps">Edit {selected.type}</p>
+                    <div className="flex gap-1">
+                      <button title="Bring forward" onClick={() => reorderZ(1)} className={`${toolBtn} w-8 h-8 border-hairline`}>
+                        <ArrowUpIcon size={14} />
+                      </button>
+                      <button title="Send back" onClick={() => reorderZ(-1)} className={`${toolBtn} w-8 h-8 border-hairline`}>
+                        <ArrowDownIcon size={14} />
+                      </button>
+                      <button title="Duplicate" onClick={duplicateSelected} className={`${toolBtn} w-8 h-8 border-hairline`}>
+                        <DuplicateIcon size={14} />
+                      </button>
+                      <button
+                        title="Straighten"
+                        onClick={() => mutateElement(selected.id, (el) => ({ ...el, rotation: 0 }))}
+                        className={`${toolBtn} w-8 h-8 border-hairline`}
+                      >
+                        <RotateIcon size={14} />
+                      </button>
+                      <button
+                        title="Delete"
+                        onClick={() => { removeSelected(); setFabOpen(false); }}
+                        className={`${toolBtn} w-8 h-8 text-red-400 border-red-200 hover:border-red-400`}
+                      >
+                        <TrashIcon size={14} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Text formatting */}
+                  {selected.type === "text" && (
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <select
+                          value={selected.font}
+                          onChange={(e) => setText(selected.id, { font: e.target.value as TextFont })}
+                          className={`${selectCls} flex-1 h-9 py-0`}
+                          style={{ fontFamily: FONT_MAP[selected.font] }}
+                        >
+                          {FONTS.map((f) => (
+                            <option key={f.value} value={f.value} style={{ fontFamily: FONT_MAP[f.value] }}>
+                              {f.label}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="flex items-center border border-hairline rounded-md h-9 shrink-0">
+                          <button onClick={() => setText(selected.id, { size: clamp(selected.size - 2, 8, 300) })} className="w-7 h-full text-ink-soft hover:text-accent">−</button>
+                          <span className="w-8 text-center text-xs">{selected.size}</span>
+                          <button onClick={() => setText(selected.id, { size: clamp(selected.size + 2, 8, 300) })} className="w-7 h-full text-ink-soft hover:text-accent">+</button>
+                        </div>
+                      </div>
+                      <div className="flex gap-1.5 items-center flex-wrap">
+                        <ColorChip
+                          title="Text color"
+                          value={selected.color}
+                          suggestions={TEXT_COLORS}
+                          onChange={(c) => setText(selected.id, { color: c })}
+                          allowGradient
+                          size={8}
+                        />
+                        <span className="w-px h-6 bg-hairline" />
+                        <button onClick={() => setText(selected.id, { bold: !selected.bold })} className={`${tb(!!selected.bold)} w-9 font-bold`}>B</button>
+                        <button onClick={() => setText(selected.id, { italic: !selected.italic })} className={`${tb(!!selected.italic)} w-9 italic`}>I</button>
+                        <button onClick={() => setText(selected.id, { underline: !selected.underline })} className={`${tb(!!selected.underline)} w-9 underline`}>U</button>
+                        <button onClick={() => setText(selected.id, { uppercase: !selected.uppercase })} className={`${tb(!!selected.uppercase)} w-9 tracking-widest text-[10px]`}>AA</button>
+                        <span className="w-px h-6 bg-hairline" />
+                        <button onClick={() => setText(selected.id, { align: "left" })} className={`${tb(selected.align === "left")} w-9`}><AlignLeftIcon size={15} /></button>
+                        <button onClick={() => setText(selected.id, { align: "center" })} className={`${tb(selected.align === "center")} w-9`}><AlignCenterIcon size={15} /></button>
+                        <button onClick={() => setText(selected.id, { align: "right" })} className={`${tb(selected.align === "right")} w-9`}><AlignRightIcon size={15} /></button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Photo formatting */}
+                  {selected.type === "photo" && (
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <select
+                          value={selected.frame}
+                          onChange={(e) => setPhoto(selected.id, { frame: e.target.value as PhotoFrame })}
+                          className={`${selectCls} flex-1 h-9 py-0`}
+                        >
+                          {FRAMES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                        </select>
+                        <select
+                          value={selected.filter ?? "none"}
+                          onChange={(e) => setPhoto(selected.id, { filter: e.target.value as PhotoFilter })}
+                          className={`${selectCls} flex-1 h-9 py-0`}
+                        >
+                          {PHOTO_FILTERS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setPhoto(selected.id, { flip: !selected.flip })}
+                          className={`${tb(!!selected.flip)} gap-1.5 px-3`}
+                        >
+                          <FlipHorizontalIcon size={16} /> Flip
+                        </button>
+                        <button
+                          onClick={() => setPhoto(selected.id, { shadow: selected.shadow !== false ? false : true })}
+                          className={`${tb(selected.shadow !== false)} gap-1.5 px-3`}
+                        >
+                          <ShadowIcon size={16} /> Shadow
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Shape formatting */}
+                  {selected.type === "shape" && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-ink-soft">Fill</span>
+                      <ColorChip
+                        title="Fill color"
+                        value={selected.fill}
+                        suggestions={FILL_COLORS}
+                        onChange={(c) => setShape(selected.id, { fill: c })}
+                        allowGradient
+                        size={8}
+                      />
+                    </div>
+                  )}
+
+                  {/* Video label */}
+                  {selected.type === "video" && (
+                    <p className="text-xs text-ink-soft flex items-center gap-1.5">
+                      <VideoIcon size={14} /> Video clip selected
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* The FAB button itself */}
+          <button
+            onClick={() => {
+              setFabOpen((v) => !v);
+              setMobileStickerOpen(false);
+            }}
+            aria-label={fabOpen ? "Close menu" : selected ? "Edit element" : "Add element"}
+            className="w-14 h-14 rounded-full bg-accent text-paper shadow-xl flex items-center justify-center text-2xl transition-transform active:scale-95 hover:bg-[#a05560] relative z-50"
+          >
+            {fabOpen ? "×" : selected ? "✎" : "⋮"}
+          </button>
+        </div>
+      )}
 
       {/* History drawer */}
       {historyOpen && page && (

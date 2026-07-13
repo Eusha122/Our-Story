@@ -12,7 +12,36 @@ import {
   type ShapeElement,
   type TextElement,
   type TextFont,
+  type VideoElement,
 } from "@/lib/types";
+
+export function isGradient(v: string | undefined): v is string {
+  return !!v && /^(linear|radial)-gradient\(/.test(v);
+}
+
+export function buildGradient(angle: number, c1: string, c2: string): string {
+  return `linear-gradient(${angle}deg, ${c1}, ${c2})`;
+}
+
+export function parseGradient(v: string): { angle: number; c1: string; c2: string } {
+  const angleMatch = /\((-?\d+)deg/.exec(v);
+  const colors = v.match(/#[0-9a-fA-F]{6}/g) ?? [];
+  return {
+    angle: angleMatch ? Number(angleMatch[1]) : 135,
+    c1: colors[0] ?? "#f5b3b8",
+    c2: colors[1] ?? "#a8c8e8",
+  };
+}
+
+/** First solid color in a value, for contexts (textareas) that can't render a gradient. */
+export function firstSolid(v: string): string {
+  if (!isGradient(v)) return v;
+  return v.match(/#[0-9a-fA-F]{6}/)?.[0] ?? "#2b2620";
+}
+
+const HEART_MASK = `url("data:image/svg+xml;utf8,${encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 29'><path d='M23.6,0c-3.4,0-6.3,2.7-7.6,5.6C14.7,2.7,11.8,0,8.4,0C3.8,0,0,3.8,0,8.4c0,9.4,9.5,11.9,16,20.4 c6.1-8.4,16-11.3,16-20.4C32,3.8,28.2,0,23.6,0z'/></svg>"
+)}")`;
 
 export const FILTER_MAP: Record<PhotoFilter, string> = {
   none: "none",
@@ -100,6 +129,30 @@ function PhotoBody({ el }: { el: PhotoElement }) {
   );
 }
 
+function VideoBody({ el }: { el: VideoElement }) {
+  const shadowClass = el.shadow === false ? "" : "photo-shadow";
+  const radius = el.frame === "rounded" ? 20 : 0;
+  return (
+    <div
+      className={`w-full h-full ${shadowClass} overflow-hidden bg-black`}
+      style={{
+        borderRadius: radius,
+        border: el.borderW ? `${el.borderW}px solid ${el.borderColor ?? "#ffffff"}` : undefined,
+      }}
+    >
+      <video
+        src={el.src}
+        className="w-full h-full object-cover"
+        controls={el.controls !== false}
+        loop={el.loop}
+        muted={el.muted}
+        autoPlay={el.autoplay}
+        playsInline
+      />
+    </div>
+  );
+}
+
 const HIGHLIGHT_RADIUS: Record<string, string> = {
   square: "0",
   rounded: "0.35em",
@@ -110,13 +163,28 @@ const HIGHLIGHT_RADIUS: Record<string, string> = {
 };
 
 function TextBody({ el }: { el: TextElement }) {
+  const gradientText = isGradient(el.color);
+  const content = gradientText ? (
+    <span
+      style={{
+        backgroundImage: el.color,
+        WebkitBackgroundClip: "text",
+        backgroundClip: "text",
+        color: "transparent",
+      }}
+    >
+      {el.text}
+    </span>
+  ) : (
+    el.text
+  );
   return (
     <div
       className="w-full h-full overflow-hidden"
       style={{
         fontFamily: FONT_MAP[el.font] ?? FONT_MAP.serif,
         fontSize: el.size,
-        color: el.color,
+        color: gradientText ? undefined : el.color,
         textAlign: el.align,
         fontWeight: el.bold ? 700 : 400,
         fontStyle: el.italic ? "italic" : "normal",
@@ -141,10 +209,10 @@ function TextBody({ el }: { el: TextElement }) {
             WebkitBoxDecorationBreak: "clone",
           }}
         >
-          {el.text}
+          {content}
         </span>
       ) : (
-        el.text
+        content
       )}
     </div>
   );
@@ -153,15 +221,26 @@ function TextBody({ el }: { el: TextElement }) {
 function ShapeBody({ el }: { el: ShapeElement }) {
   const border = el.borderW ? `${el.borderW}px solid ${el.borderColor ?? "#2b2620"}` : undefined;
   if (el.shape === "heart") {
+    // CSS mask (not SVG fill) so gradients work here exactly like every
+    // other shape; the border is a second, inset copy of the same mask.
+    const maskStyle: CSSProperties = {
+      WebkitMaskImage: HEART_MASK,
+      maskImage: HEART_MASK,
+      WebkitMaskSize: "100% 100%",
+      maskSize: "100% 100%",
+      WebkitMaskRepeat: "no-repeat",
+      maskRepeat: "no-repeat",
+    };
     return (
-      <svg viewBox="0 0 32 29" className="w-full h-full" preserveAspectRatio="none">
-        <path
-          d="M23.6,0c-3.4,0-6.3,2.7-7.6,5.6C14.7,2.7,11.8,0,8.4,0C3.8,0,0,3.8,0,8.4c0,9.4,9.5,11.9,16,20.4 c6.1-8.4,16-11.3,16-20.4C32,3.8,28.2,0,23.6,0z"
-          fill={el.fill}
-          stroke={el.borderW ? el.borderColor ?? "#2b2620" : undefined}
-          strokeWidth={el.borderW ? el.borderW * 0.15 : undefined}
+      <div className="relative w-full h-full">
+        {el.borderW ? (
+          <div className="absolute inset-0" style={{ ...maskStyle, background: el.borderColor ?? "#2b2620" }} />
+        ) : null}
+        <div
+          className="absolute"
+          style={{ ...maskStyle, background: el.fill, inset: el.borderW ?? 0 }}
         />
-      </svg>
+      </div>
     );
   }
   if (el.shape === "circle") {
@@ -311,6 +390,7 @@ export function ElementBody({ el }: { el: PageElement }) {
   if (el.type === "photo") return <PhotoBody el={el} />;
   if (el.type === "text") return <TextBody el={el} />;
   if (el.type === "shape") return <ShapeBody el={el} />;
+  if (el.type === "video") return <VideoBody el={el} />;
   return (
     <div
       className="w-full h-full flex items-center justify-center select-none"

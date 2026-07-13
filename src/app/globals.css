@@ -78,3 +78,32 @@ body {
   0%, 100% { opacity: 0; transform: scale(0.45); }
   50% { opacity: 0.9; transform: scale(1); }
 }
+
+/* ---- Mobile / device optimisations ---- */
+
+/* Fullscreen viewer: prevent browser pull-to-refresh / elastic bounce */
+.overscroll-none {
+  overscroll-behavior: none;
+}
+
+/* dvh shim — use dynamic viewport height so the canvas fills the screen
+   even when the mobile address bar is visible. Falls back to svh, then vh. */
+.h-screen-safe {
+  height: 100vh;
+  height: 100svh; /* stable: excludes address bar on mobile */
+}
+
+/* Safe-area padding helpers (iPhone notch / Dynamic Island / home bar) */
+.pt-safe { padding-top: env(safe-area-inset-top); }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.pl-safe { padding-left: env(safe-area-inset-left); }
+.pr-safe { padding-right: env(safe-area-inset-right); }
+
+/* Swipe hint shimmer used on the viewer */
+@keyframes os-swipe-hint {
+  0%   { opacity: 0; transform: translateX(-6px); }
+  30%  { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: translateX(6px); }
+}
+

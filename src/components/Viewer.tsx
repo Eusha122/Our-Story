@@ -55,25 +55,68 @@ const VARIANTS: Record<Transition, Variants> = {
   },
 };
 
+/**
+ * Computes the scale factor that fits the design canvas (PAGE_W × PAGE_H)
+ * inside the current viewport, with a small padding factor.
+ * Uses visualViewport when available so the value is correct even when the
+ * browser's on-screen keyboard or address bar has resized the window.
+ */
 function useFitScale(padding = 0.94) {
   const [scale, setScale] = useState(0.3);
   useEffect(() => {
-    const update = () =>
-      setScale(Math.min(window.innerWidth / PAGE_W, window.innerHeight / PAGE_H) * padding);
+    const update = () => {
+      const vp = window.visualViewport ?? window;
+      const w = "width" in vp ? vp.width! : window.innerWidth;
+      const h = "height" in vp ? vp.height! : window.innerHeight;
+      setScale(Math.min(w / PAGE_W, h / PAGE_H) * padding);
+    };
     update();
     window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
+    window.visualViewport?.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("resize", update);
+    };
   }, [padding]);
   return scale;
+}
+
+/** Fades away after the first swipe so it never bothers the user again. */
+function SwipeHint() {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(false), 3200);
+    return () => clearTimeout(t);
+  }, []);
+  if (!visible) return null;
+  return (
+    <div
+      aria-hidden
+      className="absolute inset-x-0 bottom-20 flex items-center justify-center gap-2 pointer-events-none select-none"
+      style={{ animation: "os-swipe-hint 3s ease-in-out forwards" }}
+    >
+      <span className="text-lg">←</span>
+      <span className="text-xs tracking-widest uppercase text-ink/40 font-[family-name:var(--font-sans)]">
+        swipe
+      </span>
+      <span className="text-lg">→</span>
+    </div>
+  );
 }
 
 export default function Viewer({ pages }: { pages: Page[] }) {
   const [[index, dir], setIndex] = useState<[number, number]>([0, 1]);
   const scale = useFitScale();
   const touchStart = useRef<{ x: number; y: number } | null>(null);
+  // Only show the swipe hint on touch devices on first load.
+  const [showHint, setShowHint] = useState(false);
+  useEffect(() => {
+    if ("ontouchstart" in window) setShowHint(true);
+  }, []);
 
   const go = useCallback(
     (delta: number) => {
+      setShowHint(false); // dismiss hint on first interaction
       setIndex(([i]) => {
         const next = Math.min(Math.max(i + delta, 0), pages.length - 1);
         return next === i ? [i, delta] : [next, delta];
@@ -82,6 +125,7 @@ export default function Viewer({ pages }: { pages: Page[] }) {
     [pages.length]
   );
 
+  // Keyboard navigation (desktop)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight" || e.key === " " || e.key === "PageDown") go(1);
@@ -110,10 +154,20 @@ export default function Viewer({ pages }: { pages: Page[] }) {
 
   return (
     <main
-      className="flex-1 relative overflow-hidden bg-canvas-bg select-none"
-      style={{ perspective: 1800, touchAction: "pan-y" }}
+      className="flex-1 relative overflow-hidden bg-canvas-bg select-none overscroll-none h-screen-safe"
+      style={{
+        // perspective for flip/spiral transitions
+        perspective: 1800,
+        // "none" gives our touch handlers full control — prevents the browser
+        // from simultaneously scrolling while the user tries to swipe pages.
+        touchAction: "none",
+      }}
       onTouchStart={(e) => {
         touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      }}
+      onTouchMove={(e) => {
+        // Prevent rubber-band / pull-to-refresh on iOS while swiping.
+        e.preventDefault();
       }}
       onTouchEnd={(e) => {
         const start = touchStart.current;
@@ -121,7 +175,8 @@ export default function Viewer({ pages }: { pages: Page[] }) {
         if (!start) return;
         const dx = e.changedTouches[0].clientX - start.x;
         const dy = e.changedTouches[0].clientY - start.y;
-        if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy)) go(dx < 0 ? 1 : -1);
+        // Only trigger if clearly horizontal (avoids accidental navigation on vertical scroll gestures).
+        if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.5) go(dx < 0 ? 1 : -1);
       }}
     >
       <AnimatePresence custom={dir} mode="popLayout" initial={false}>
@@ -148,12 +203,13 @@ export default function Viewer({ pages }: { pages: Page[] }) {
         </motion.div>
       </AnimatePresence>
 
-      {/* Navigation arrows (desktop) */}
+      {/* Navigation arrows — desktop only, hidden on touch devices */}
       {index > 0 && (
         <button
           onClick={() => go(-1)}
           aria-label="Previous page"
           className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-paper/80 backdrop-blur border border-hairline text-ink-soft hover:text-accent hover:border-accent transition-colors items-center justify-center hidden sm:flex"
+          style={{ left: "max(0.75rem, env(safe-area-inset-left))" }}
         >
           ←
         </button>
@@ -163,13 +219,17 @@ export default function Viewer({ pages }: { pages: Page[] }) {
           onClick={() => go(1)}
           aria-label="Next page"
           className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-paper/80 backdrop-blur border border-hairline text-ink-soft hover:text-accent hover:border-accent transition-colors items-center justify-center hidden sm:flex"
+          style={{ right: "max(0.75rem, env(safe-area-inset-right))" }}
         >
           →
         </button>
       )}
 
-      {/* Progress dots */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+      {/* Progress dots — lifted above the iOS home bar */}
+      <div
+        className="absolute left-1/2 -translate-x-1/2 flex gap-2"
+        style={{ bottom: "max(1rem, calc(env(safe-area-inset-bottom) + 0.5rem))" }}
+      >
         {pages.map((p, i) => (
           <button
             key={p.id}
@@ -182,9 +242,16 @@ export default function Viewer({ pages }: { pages: Page[] }) {
         ))}
       </div>
 
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 label-caps">
+      {/* Page title — below the notch/Dynamic Island */}
+      <div
+        className="absolute left-1/2 -translate-x-1/2 label-caps"
+        style={{ top: "max(1rem, calc(env(safe-area-inset-top) + 0.5rem))" }}
+      >
         {page.title || `Page ${index + 1}`}
       </div>
+
+      {/* Swipe hint — only shown on touch devices, fades out automatically */}
+      {showHint && pages.length > 1 && <SwipeHint />}
     </main>
   );
 }

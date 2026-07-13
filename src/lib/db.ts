@@ -5,12 +5,56 @@ import type { Page, PageData, PageVersion } from "./types";
 
 const MAX_VERSIONS_PER_PAGE = 50;
 
+// ─── MIME → file extension map (used by upload route) ─────────────────────
+export const EXT_BY_MIME: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/heic": "heic",
+  "image/heif": "heif",
+  "video/mp4": "mp4",
+  "video/quicktime": "mov",
+  "video/webm": "webm",
+  "video/x-matroska": "mkv",
+};
+
+export function extForMime(mime: string, fallback: string): string {
+  return EXT_BY_MIME[mime] ?? fallback;
+}
+
+// ─── DB bootstrap ──────────────────────────────────────────────────────────
+
+/**
+ * One-time schema upgrade: if the images table still has the old BLOB
+ * `data` column (from before the disk-storage era), drop it and rebuild
+ * with the metadata-only schema. Any data in those rows is discarded —
+ * those blobs predate even the disk-storage migration and should not exist
+ * in any live database at this point.
+ */
+function migrateSchema(raw: Database.Database): void {
+  const cols = raw.prepare("PRAGMA table_info(images)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "kind")) {
+    raw.exec("ALTER TABLE images RENAME TO images_old");
+    raw.exec(`
+      CREATE TABLE images (
+        id TEXT PRIMARY KEY,
+        mime TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'image',
+        ext TEXT NOT NULL,
+        bytes INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+    raw.exec("DROP TABLE images_old");
+  }
+}
+
 function createDb(): Database.Database {
   const dir = path.join(process.cwd(), "data");
   fs.mkdirSync(dir, { recursive: true });
   const db = new Database(path.join(dir, "ourstory.db"));
-  // Wait instead of throwing when parallel workers (next build) open the
-  // file at the same time.
+  // Avoid SQLITE_BUSY when Next.js build workers open the file in parallel.
   db.pragma("busy_timeout = 5000");
   db.pragma("journal_mode = WAL");
   db.exec(`
@@ -32,19 +76,24 @@ function createDb(): Database.Database {
     CREATE TABLE IF NOT EXISTS images (
       id TEXT PRIMARY KEY,
       mime TEXT NOT NULL,
-      data BLOB NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'image',
+      ext TEXT NOT NULL,
+      bytes INTEGER NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+  migrateSchema(db);
   return db;
 }
 
-// Open lazily (not at module import) so build-time module evaluation never
-// touches the file, and reuse one connection across dev hot-reloads.
+// Lazy singleton — never touches the file at build/import time, survives
+// Next.js hot reloads without opening a second connection.
 const globalForDb = globalThis as unknown as { __ourstoryDb?: Database.Database };
 function db(): Database.Database {
   return (globalForDb.__ourstoryDb ??= createDb());
 }
+
+// ─── Pages ────────────────────────────────────────────────────────────────
 
 interface PageRow {
   id: string;
@@ -94,7 +143,6 @@ export function updatePage(
   if (fields.data !== undefined) {
     const json = JSON.stringify(fields.data);
     if (json !== JSON.stringify(existing.data)) {
-      // Snapshot the *outgoing* state so history can always go back.
       recordVersion(id, existing.data);
     }
     db().prepare("UPDATE pages SET data = ?, updated_at = datetime('now') WHERE id = ?").run(json, id);
@@ -120,6 +168,8 @@ export function reorderPages(ids: string[]): void {
   });
   tx();
 }
+
+// ─── Version history ───────────────────────────────────────────────────────
 
 function recordVersion(pageId: string, data: PageData): void {
   db().prepare("INSERT INTO page_versions (page_id, data) VALUES (?, ?)").run(pageId, JSON.stringify(data));
@@ -157,13 +207,40 @@ export function restoreVersion(pageId: string, versionId: number): Page | null {
   return updatePage(pageId, { data: JSON.parse(row.data) as PageData });
 }
 
-export function saveImage(id: string, mime: string, buf: Buffer): void {
-  db().prepare("INSERT INTO images (id, mime, data) VALUES (?, ?, ?)").run(id, mime, buf);
+// ─── Media metadata (files live in Cloudflare R2) ─────────────────────────
+
+export type MediaKind = "image" | "video";
+
+export interface MediaMeta {
+  id: string;
+  mime: string;
+  kind: MediaKind;
+  ext: string;
+  bytes: number;
 }
 
-export function getImage(id: string): { mime: string; data: Buffer } | null {
-  const row = db().prepare("SELECT mime, data FROM images WHERE id = ?").get(id) as
-    | { mime: string; data: Buffer }
-    | undefined;
+/** Write the metadata row. The actual file is uploaded to R2 by the caller. */
+export function saveMedia(meta: MediaMeta): void {
+  db()
+    .prepare("INSERT INTO images (id, mime, kind, ext, bytes) VALUES (?, ?, ?, ?, ?)")
+    .run(meta.id, meta.mime, meta.kind, meta.ext, meta.bytes);
+}
+
+export function getMedia(id: string): MediaMeta | null {
+  const row = db()
+    .prepare("SELECT id, mime, kind, ext, bytes FROM images WHERE id = ?")
+    .get(id) as MediaMeta | undefined;
   return row ?? null;
+}
+
+/** Remove the metadata row. The R2 object must be deleted by the caller first. */
+export function deleteMedia(id: string): void {
+  db().prepare("DELETE FROM images WHERE id = ?").run(id);
+}
+
+export function getStorageUsage(): { bytes: number; count: number } {
+  const row = db()
+    .prepare("SELECT COALESCE(SUM(bytes),0) AS bytes, COUNT(*) AS count FROM images")
+    .get() as { bytes: number; count: number };
+  return row;
 }

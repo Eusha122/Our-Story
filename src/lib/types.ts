@@ -159,7 +159,22 @@ export interface StickerElement extends ElementBase {
   emoji: string;
 }
 
-export type PageElement = PhotoElement | TextElement | StickerElement | ShapeElement;
+export type VideoFrame = "plain" | "rounded";
+
+export interface VideoElement extends ElementBase {
+  type: "video";
+  src: string; // /api/images/<id>
+  frame: VideoFrame;
+  controls?: boolean; // default true
+  loop?: boolean;
+  muted?: boolean;
+  autoplay?: boolean;
+  shadow?: boolean;
+  borderW?: number;
+  borderColor?: string;
+}
+
+export type PageElement = PhotoElement | TextElement | StickerElement | ShapeElement | VideoElement;
 
 /** Animated ambient layer rendered behind the page's elements. */
 export type PageEffect = "none" | "glow" | "hearts" | "sparkles" | "bokeh";
