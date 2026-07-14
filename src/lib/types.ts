@@ -128,7 +128,7 @@ export interface ShapeElement extends ElementBase {
   borderW?: number;
   borderColor?: string;
   src?: string;
-  srcType?: "photo" | "video";
+  srcType?: "photo" | "video" | "map";
   playButtonStyle?: PlayButtonStyle;
 }
 

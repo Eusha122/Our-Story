@@ -1783,22 +1783,25 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
             }
           }
 
-          // If a SINGLE photo or video is dropped onto a shape, replace the shape's image
-          if (idsToMove.length === 1 && (el.type === "photo" || el.type === "video") && el.src) {
+          // If a SINGLE photo, video or map is dropped onto a shape, replace the shape's image
+          if (idsToMove.length === 1 && (el.type === "photo" || el.type === "video" || el.type === "map")) {
             const shapeNode = targetNode?.closest("[data-shape-id]");
             if (shapeNode) {
               const shapeId = shapeNode.getAttribute("data-shape-id");
               if (shapeId && shapeId !== el.id) {
-                const mediaSrc = el.src;
-                const mediaType = el.type;
-                mutateData((d) => {
-                  let nextElements = d.elements.map(e => 
-                    e.id === shapeId && e.type === "shape" ? { ...e, src: mediaSrc, srcType: mediaType } : e
-                  );
-                  nextElements = nextElements.filter(e => e.id !== el.id);
-                  return { ...d, elements: nextElements };
-                });
-                setSelectedIds([shapeId]);
+                // Determine the src to use (for map, we use the query string)
+                const mediaSrc = el.type === "map" ? (el as MapElement).query : (el as any).src;
+                if (mediaSrc) {
+                  const mediaType = el.type;
+                  mutateData((d) => {
+                    let nextElements = d.elements.map(e => 
+                      e.id === shapeId && e.type === "shape" ? { ...e, src: mediaSrc, srcType: mediaType } : e
+                    );
+                    nextElements = nextElements.filter(e => e.id !== el.id);
+                    return { ...d, elements: nextElements };
+                  });
+                  setSelectedIds([shapeId]);
+                }
               }
             }
           }
