@@ -242,13 +242,15 @@ export default function Viewer({ pages }: { pages: Page[] }) {
         ))}
       </div>
 
-      {/* Page title — below the notch/Dynamic Island */}
+      {/* Page title — below the notch/Dynamic Island (HIDDEN) */}
+      {/*
       <div
         className="absolute left-1/2 -translate-x-1/2 label-caps"
         style={{ top: "max(1rem, calc(env(safe-area-inset-top) + 0.5rem))" }}
       >
         {page.title || `Page ${index + 1}`}
       </div>
+      */}
 
       {/* Swipe hint — only shown on touch devices, fades out automatically */}
       {showHint && pages.length > 1 && <SwipeHint />}
