@@ -47,6 +47,30 @@ export function firstSolid(v: string): string {
   return v.match(/#[0-9a-fA-F]{6}/)?.[0] ?? "#2b2620";
 }
 
+// Only one video or audio clip should ever play at once across a page —
+// starting a new one pauses whatever else was playing, the way a real
+// slideshow/scrapbook would behave.
+const activeMediaElements = new Set<HTMLMediaElement>();
+
+function useExclusiveMedia(ref: React.RefObject<HTMLMediaElement | null>) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onPlay = () => {
+      activeMediaElements.forEach((other) => {
+        if (other !== el && !other.paused) other.pause();
+      });
+    };
+    el.addEventListener("play", onPlay);
+    activeMediaElements.add(el);
+    return () => {
+      el.removeEventListener("play", onPlay);
+      activeMediaElements.delete(el);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}
+
 const HEART_MASK = `url("data:image/svg+xml;utf8,${encodeURIComponent(
   "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 29'><path d='M23.6,0c-3.4,0-6.3,2.7-7.6,5.6C14.7,2.7,11.8,0,8.4,0C3.8,0,0,3.8,0,8.4c0,9.4,9.5,11.9,16,20.4 c6.1-8.4,16-11.3,16-20.4C32,3.8,28.2,0,23.6,0z'/></svg>"
 )}")`;
@@ -123,6 +147,7 @@ export function elementStyle(el: PageElement): CSSProperties {
 function PhotoBody({ el, animate }: { el: PhotoElement; animate: boolean }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const isPlaying = useRef(false);
+  useExclusiveMedia(audioRef);
 
   const handlePhotoClick = () => {
     if (!animate || !el.audioSrc || !audioRef.current) return;
@@ -228,6 +253,8 @@ function CustomVideoPlayer({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [hover, setHover] = useState(false);
+
+  useExclusiveMedia(videoRef);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -519,8 +546,8 @@ function ShapeBody({ el, animate }: { el: ShapeElement; animate: boolean }) {
       src={el.src!}
       controls={true}
       loop={true}
-      muted={true}
-      autoplay={true}
+      muted={false}
+      autoplay={false}
       objectPosition={bgStyle.backgroundPosition}
       playButtonStyle={el.playButtonStyle}
     />
@@ -594,6 +621,7 @@ function ShapeBody({ el, animate }: { el: ShapeElement; animate: boolean }) {
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const isPlaying = useRef(false);
+  useExclusiveMedia(audioRef);
 
   const handleShapeClick = () => {
     if (!animate || !el.audioSrc || !audioRef.current) return;
@@ -921,6 +949,7 @@ function AudioBody({ el, animate }: { el: AudioElement; animate: boolean }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(el.startTime ?? 0);
   const [duration, setDuration] = useState(0);
+  useExclusiveMedia(audioRef);
 
   useEffect(() => {
     if (audioRef.current && el.startTime !== undefined && !isPlaying) {
