@@ -21,7 +21,30 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3100/login)",
       "Bash(curl -s -b /tmp/os_cookies.txt -o /dev/null -w \"%{http_code}\" http://localhost:3100/editor)",
       "Bash(curl -s -b /tmp/os_cookies.txt http://localhost:3100/editor)",
-      "Bash(curl -s http://localhost:3100/api/pages)"
+      "Bash(curl -s http://localhost:3100/api/pages)",
+      "Bash(chmod 400 \"/c/Users/user/Downloads/LightsailDefaultKey-ap-south-1.pem\")",
+      "Bash(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -i \"/c/Users/user/Downloads/LightsailDefaultKey-ap-south-1.pem\" ubuntu@13.232.202.161 \"echo CONNECTED; whoami; uname -a; lsb_release -a 2>/dev/null; echo '--- node ---'; node -v 2>/dev/null || echo 'no node'; echo '--- disk ---'; df -h /; echo '--- mem ---'; free -h; echo '--- existing app dirs ---'; ls -la ~\")",
+      "Bash(ssh -i /c/Users/user/Downloads/LightsailDefaultKey-ap-south-1.pem ubuntu@13.232.202.161 ' *)",
+      "Bash(nslookup ourstory.safeshare.co)",
+      "Bash(dig +short ourstory.safeshare.co)",
+      "Bash(nslookup -type=NS safeshare.co)",
+      "Bash(nslookup monopoly.safeshare.co)",
+      "Bash(openssl rand *)",
+      "Bash(ssh -i *)",
+      "Bash(ssh -i /c/Users/user/Downloads/LightsailDefaultKey-ap-south-1.pem ubuntu@13.232.202.161 'mkdir -p ~/our-story/data')",
+      "Bash(scp -i /c/Users/user/Downloads/LightsailDefaultKey-ap-south-1.pem '/f/our story/data/ourstory.db' ubuntu@13.232.202.161:~/our-story/data/ourstory.db)",
+      "Bash(scp -i /c/Users/user/Downloads/LightsailDefaultKey-ap-south-1.pem '/f/our story/data/ourstory.db-wal' ubuntu@13.232.202.161:~/our-story/data/ourstory.db-wal)",
+      "Bash(scp -i /c/Users/user/Downloads/LightsailDefaultKey-ap-south-1.pem '/f/our story/data/ourstory.db-shm' ubuntu@13.232.202.161:~/our-story/data/ourstory.db-shm)",
+      "Bash(ssh -i /c/Users/user/Downloads/LightsailDefaultKey-ap-south-1.pem ubuntu@13.232.202.161 'ls -la ~/our-story/data')",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" https://ourstory.safeshare.co/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" https://ourstory.safeshare.co/login)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code} -> %{redirect_url}\\\\n\" https://ourstory.safeshare.co/editor)",
+      "Bash(curl -s https://ourstory.safeshare.co/api/pages)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" https://ourstory.safeshare.co/api/images/HobFSSWJC6rM2SrE)",
+      "Bash(ssh -i /c/Users/user/Downloads/LightsailDefaultKey-ap-south-1.pem ubuntu@13.232.202.161 'systemctl is-enabled pm2-ubuntu 2>&1 || echo \"pm2 startup not registered\"')",
+      "Bash(curl -s -c /tmp/ourstory_prod_cookie.txt -X POST https://ourstory.safeshare.co/api/auth/login -H \"Content-Type: application/json\" -d '{\"password\":\"ourstory\"}')",
+      "Bash(curl -s -b /tmp/ourstory_prod_cookie.txt -o /dev/null -w \"editor with cookie: %{http_code}\\\\n\" https://ourstory.safeshare.co/editor)",
+      "Bash(node -e ' *)"
     ]
   }
 }
