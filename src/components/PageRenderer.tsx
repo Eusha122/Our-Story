@@ -13,7 +13,9 @@ import {
   type PageElement,
   type PhotoElement,
   type PhotoFilter,
+  type PlayButtonStyle,
   type ShapeElement,
+  type ShapeKind,
   type TextElement,
   type TextFont,
   type VideoElement,
@@ -420,16 +422,16 @@ function TextBody({ el, animate = false }: { el: TextElement; animate?: boolean 
       if (node.nodeType === Node.ELEMENT_NODE) {
         const element = node as HTMLElement;
         const tagName = element.tagName.toLowerCase();
-        const style: React.CSSProperties = {};
+        const style: Record<string, string> = {};
         for (let i = 0; i < element.style.length; i++) {
           const name = element.style[i];
           const camelCase = name.replace(/-([a-z])/g, g => g[1].toUpperCase());
-          style[camelCase as keyof React.CSSProperties] = element.style[name as any];
+          style[camelCase] = element.style[name as any];
         }
-        
+
         const children = Array.from(element.childNodes).map((child, i) => renderNode(child, `${keyPath}-${i}`));
-        
-        return React.createElement(tagName, { key: `${keyPath}-${loopNonce}`, style }, children);
+
+        return React.createElement(tagName, { key: `${keyPath}-${loopNonce}`, style: style as React.CSSProperties }, children);
       }
       return null;
     }

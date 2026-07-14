@@ -17,6 +17,7 @@ import {
   PAGE_EFFECTS,
   type EntranceAnim,
   type HighlightStyle,
+  type MapElement,
   type Page,
   type PageData,
   type PageEffect,
@@ -25,6 +26,7 @@ import {
   type PhotoFilter,
   type PhotoFrame,
   type ShapeKind,
+  type TextElement,
   type TextFont,
   type Transition,
 } from "@/lib/types";
@@ -3052,11 +3054,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                                 const res = await fetch("/api/images", { method: "POST", body: fd });
                                 if (res.ok) {
                                   const json = await res.json();
-                                  if (selected.type === "photo") {
-                                    setPhoto(selected.id, { audioSrc: `/api/images/${json.id}` });
-                                  } else if (selected.type === "shape") {
-                                    setShape(selected.id, { audioSrc: `/api/images/${json.id}` });
-                                  }
+                                  setPhoto(selected.id, { audioSrc: `/api/images/${json.id}` });
                                 }
                               }
                             };
@@ -3072,8 +3070,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                             <span className="text-xs text-ink bg-paper border border-hairline px-2 py-1 rounded-md flex-1 truncate">Audio Attached</span>
                             <button
                               onClick={() => {
-                                if (selected.type === "photo") setPhoto(selected.id, { audioSrc: undefined, audioStartTime: undefined, audioEndTime: undefined });
-                                else if (selected.type === "shape") setShape(selected.id, { audioSrc: undefined, audioStartTime: undefined, audioEndTime: undefined });
+                                setPhoto(selected.id, { audioSrc: undefined, audioStartTime: undefined, audioEndTime: undefined });
                               }}
                               className="text-xs text-red-500 hover:text-red-700 bg-red-50 px-2 rounded-md"
                             >
@@ -3088,8 +3085,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                                 value={selected.audioStartTime ?? ""}
                                 onChange={(e) => {
                                   const val = e.target.value ? parseFloat(e.target.value) : undefined;
-                                  if (selected.type === "photo") setPhoto(selected.id, { audioStartTime: val });
-                                  else if (selected.type === "shape") setShape(selected.id, { audioStartTime: val });
+                                  setPhoto(selected.id, { audioStartTime: val });
                                 }}
                                 className="w-1/2 bg-transparent text-xs text-ink placeholder-ink-soft focus:outline-none px-2 py-1 border-b border-hairline"
                               />
@@ -3099,8 +3095,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                                 value={selected.audioEndTime ?? ""}
                                 onChange={(e) => {
                                   const val = e.target.value ? parseFloat(e.target.value) : undefined;
-                                  if (selected.type === "photo") setPhoto(selected.id, { audioEndTime: val });
-                                  else if (selected.type === "shape") setShape(selected.id, { audioEndTime: val });
+                                  setPhoto(selected.id, { audioEndTime: val });
                                 }}
                                 className="w-1/2 bg-transparent text-xs text-ink placeholder-ink-soft focus:outline-none px-2 py-1 border-b border-hairline"
                               />

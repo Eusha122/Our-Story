@@ -36,6 +36,9 @@ yarn-error.log*
 # local database (your photos & diary live here — back it up separately!)
 /data/
 
+# local safety backups of the database
+/backups/
+
 # vercel
 .vercel
 
