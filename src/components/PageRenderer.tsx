@@ -1000,31 +1000,31 @@ function AudioBody({ el, animate }: { el: AudioElement; animate: boolean }) {
 
   const theme = el.playerTheme || "glass";
   
-  let containerCls = "w-full h-full flex items-center justify-between px-4 relative overflow-hidden shadow-xl backdrop-blur-md ";
-  let textCls = "text-xs font-medium ";
-  let iconCls = "flex items-center justify-center transition-transform hover:scale-110 ";
-  let playBtnCls = "w-10 h-10 shrink-0 rounded-full flex items-center justify-center transition-transform hover:scale-110 shadow-md ";
+  let containerCls = "w-full h-full flex items-center justify-between px-6 py-2 relative overflow-hidden shadow-2xl backdrop-blur-2xl backdrop-saturate-150 ";
+  let textCls = "text-sm font-semibold tracking-wide ";
+  let iconCls = "flex items-center justify-center transition-all hover:scale-110 active:scale-95 ";
+  let playBtnCls = "w-14 h-14 shrink-0 rounded-full flex items-center justify-center transition-all hover:scale-110 active:scale-95 shadow-xl ";
   
   if (theme === "glass") {
-    containerCls += "bg-white/50 border border-white/60 rounded-3xl";
-    textCls += "text-ink";
-    iconCls += "text-ink-soft hover:text-ink";
-    playBtnCls += "bg-white/80 text-ink backdrop-blur-md border border-white";
+    containerCls += "bg-white/15 border border-white/30 rounded-[2rem] shadow-[0_8px_32px_rgba(0,0,0,0.08)]";
+    textCls += "text-ink/90";
+    iconCls += "text-ink/80 hover:text-ink";
+    playBtnCls += "bg-white/90 text-ink backdrop-blur-xl border border-white/50 shadow-lg";
   } else if (theme === "minimal") {
-    containerCls += "bg-[#2b2620] border border-[#3f3830] rounded-xl";
+    containerCls += "bg-[#2b2620]/90 border border-[#3f3830] rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.5)]";
     textCls += "text-paper";
     iconCls += "text-paper/60 hover:text-paper";
-    playBtnCls += "bg-paper text-ink";
+    playBtnCls += "bg-paper text-ink shadow-[0_4px_15px_rgba(0,0,0,0.4)]";
   } else if (theme === "solid") {
-    containerCls += "bg-paper border border-hairline rounded-sm";
+    containerCls += "bg-paper/95 border border-hairline rounded-xl";
     textCls += "text-ink";
     iconCls += "text-ink-soft hover:text-ink";
     playBtnCls += "bg-accent text-paper";
   } else if (theme === "neon") {
-    containerCls += "bg-black border border-white/20 rounded-full shadow-[0_0_20px_rgba(255,255,255,0.4)]";
+    containerCls += "bg-black/70 border border-white/20 rounded-[2rem] shadow-[0_0_30px_rgba(255,255,255,0.4)]";
     textCls += "text-white";
     iconCls += "text-white/70 hover:text-white";
-    playBtnCls += "bg-transparent border border-white text-white shadow-[0_0_15px_rgba(255,255,255,0.6)]";
+    playBtnCls += "bg-white/10 backdrop-blur-xl border border-white/80 text-white shadow-[0_0_20px_rgba(255,255,255,0.8)]";
   }
 
   const start = el.startTime ?? 0;
@@ -1045,24 +1045,24 @@ function AudioBody({ el, animate }: { el: AudioElement; animate: boolean }) {
         onPause={handlePause}
       />
       
-      <div className="flex items-center gap-4 w-full">
+      <div className="flex items-center gap-5 w-full">
         {/* Play Controls */}
-        <div className="flex items-center gap-3 shrink-0">
-          <button onPointerDown={handlePrev} className={iconCls} title="Restart">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11 17l-5-5 5-5v10zM18 17l-5-5 5-5v10zM6 17H4V7h2v10z"/></svg>
-          </button>
+        <div className="flex items-center gap-4 shrink-0">
+          <div role="button" onPointerDown={handlePrev} className={iconCls + " cursor-pointer"} title="Restart">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M11 17l-5-5 5-5v10zM18 17l-5-5 5-5v10zM6 17H4V7h2v10z"/></svg>
+          </div>
           
-          <button onPointerDown={togglePlay} className={playBtnCls}>
+          <div role="button" onPointerDown={togglePlay} className={playBtnCls + " cursor-pointer"}>
             {isPlaying ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
             ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="ml-1"><path d="M8 5v14l11-7z"/></svg>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className="translate-x-[2px]"><path d="M8 5v14l11-7z"/></svg>
             )}
-          </button>
+          </div>
           
-          <button onPointerDown={handleNext} className={iconCls} title="End">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M13 7l5 5-5 5V7zM6 7l5 5-5 5V7zM18 7h2v10h-2V7z"/></svg>
-          </button>
+          <div role="button" onPointerDown={handleNext} className={iconCls + " cursor-pointer"} title="End">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M13 7l5 5-5 5V7zM6 7l5 5-5 5V7zM18 7h2v10h-2V7z"/></svg>
+          </div>
         </div>
 
         {/* Timeline */}
@@ -1074,7 +1074,7 @@ function AudioBody({ el, animate }: { el: AudioElement; animate: boolean }) {
           <div className="relative w-full h-1.5 bg-black/10 rounded-full flex items-center overflow-hidden">
             <div 
               className="absolute left-0 h-full rounded-full pointer-events-none"
-              style={{ width: `${Math.min(100, Math.max(0, progress))}%`, backgroundColor: theme === 'neon' ? '#fff' : (theme === 'minimal' ? '#f2efeb' : '#b76e79') }} 
+              style={{ width: `${Math.min(100, Math.max(0, progress))}%`, backgroundColor: theme === 'neon' ? '#fff' : (theme === 'minimal' ? '#f2efeb' : (theme === 'glass' ? 'rgba(0,0,0,0.6)' : '#b76e79')) }} 
             />
             <input 
               type="range"
