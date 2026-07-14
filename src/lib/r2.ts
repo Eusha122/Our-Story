@@ -31,6 +31,18 @@ export function r2Key(id: string, ext: string): string {
   return `media/${id}.${ext}`;
 }
 
+/**
+ * Direct public URL for an object (R2.dev dev URL, or a custom domain if
+ * you switch to one later) — set R2_PUBLIC_URL to enable serving media
+ * straight from Cloudflare's edge instead of proxying through this server.
+ * Returns null (falls back to proxying) if it isn't configured.
+ */
+export function r2PublicUrl(key: string): string | null {
+  const base = process.env.R2_PUBLIC_URL;
+  if (!base) return null;
+  return `${base.replace(/\/$/, "")}/${key}`;
+}
+
 /** Upload a buffer as a new R2 object. */
 export async function uploadToR2(
   key: string,
