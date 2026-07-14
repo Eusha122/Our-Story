@@ -247,8 +247,15 @@ function CustomVideoPlayer({
     e.stopPropagation();
     const v = videoRef.current;
     if (!v) return;
-    if (v.paused) v.play();
-    else v.pause();
+    if (v.paused) {
+      // A tap is a real user gesture, so unmute regardless of whatever
+      // autoplay-compliance default it started with — someone pressing
+      // play always expects to actually hear it.
+      v.muted = false;
+      v.play();
+    } else {
+      v.pause();
+    }
   };
 
   let themeClasses = "";

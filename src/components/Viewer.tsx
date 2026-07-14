@@ -203,12 +203,12 @@ export default function Viewer({ pages }: { pages: Page[] }) {
         </motion.div>
       </AnimatePresence>
 
-      {/* Navigation arrows */}
+      {/* Navigation arrows — desktop/mouse only; phones get swipe instead */}
       {index > 0 && (
         <button
           onClick={() => go(-1)}
           aria-label="Previous page"
-          className="absolute top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-paper/80 backdrop-blur border border-hairline text-ink-soft hover:text-accent hover:border-accent transition-colors flex items-center justify-center z-10"
+          className="hidden sm:flex absolute top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-paper/80 backdrop-blur border border-hairline text-ink-soft hover:text-accent hover:border-accent transition-colors items-center justify-center z-10"
           style={{ left: "max(0.75rem, env(safe-area-inset-left))" }}
         >
           ←
@@ -218,7 +218,7 @@ export default function Viewer({ pages }: { pages: Page[] }) {
         <button
           onClick={() => go(1)}
           aria-label="Next page"
-          className="absolute top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-paper/80 backdrop-blur border border-hairline text-ink-soft hover:text-accent hover:border-accent transition-colors flex items-center justify-center z-10"
+          className="hidden sm:flex absolute top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-paper/80 backdrop-blur border border-hairline text-ink-soft hover:text-accent hover:border-accent transition-colors items-center justify-center z-10"
           style={{ right: "max(0.75rem, env(safe-area-inset-right))" }}
         >
           →
