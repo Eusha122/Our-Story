@@ -241,8 +241,11 @@ function TextBody({ el, animate = false }: { el: TextElement; animate?: boolean 
   const gradientText = isGradient(el.color);
   const isTypewriter = animate && el.anim === "typewriter";
   
-  const contentTokens = el.text.split(/(\s+)/);
+  const contentTokens = el.text.split("");
   const baseDelay = 0.45 + (el.animDelay ?? 0);
+  const totalDuration = el.animDuration ?? (contentTokens.length * 0.08);
+  // Cap the speed to a minimum of 0.04s per character (fast) and max of 0.15s (very slow)
+  const step = Math.min(0.15, Math.max(0.04, totalDuration / Math.max(1, contentTokens.length)));
   
   const renderedText = isTypewriter ? (
     contentTokens.map((token, i) => (
@@ -250,7 +253,7 @@ function TextBody({ el, animate = false }: { el: TextElement; animate?: boolean 
         key={i}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 0.1, delay: baseDelay + i * 0.1 }}
+        transition={{ duration: 0.01, delay: baseDelay + i * step }}
       >
         {token}
       </motion.span>
@@ -1228,7 +1231,11 @@ export default function PageRenderer({ data, animate = false }: { data: PageData
                 transition={{
                   delay: 0.45 + (el.animDelay ?? i * 0.12),
                   ...(entrance.spring
-                    ? { type: "spring", stiffness: 240, damping: 17 }
+                    ? { 
+                        type: "spring", 
+                        bounce: 0.35, 
+                        duration: el.animDuration ?? 0.8 
+                      }
                     : { 
                         duration: el.animDuration ?? (entrance.linear ? 1.5 : 0.65), 
                         ease: entrance.linear ? "linear" : [0.22, 1, 0.36, 1],

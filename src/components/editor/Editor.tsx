@@ -2478,7 +2478,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                                 lineHeight: el.lineHeight ?? 1.45,
                               }}
                             />
-                          ) : previewEntrance ? (
+                          ) : (previewEntrance && !(el.type === "text" && el.anim === "typewriter")) ? (
                             <motion.div
                               key={animPreview!.nonce}
                               className="w-full h-full"
@@ -2486,7 +2486,12 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                               animate={previewEntrance.to}
                               transition={
                                 previewEntrance.spring
-                                  ? { type: "spring", stiffness: 240, damping: 17, delay: el.animDelay ?? 0 }
+                                  ? { 
+                                      type: "spring", 
+                                      bounce: 0.35, 
+                                      duration: el.animDuration ?? 0.8, 
+                                      delay: el.animDelay ?? 0 
+                                    }
                                   : {
                                       delay: el.animDelay ?? 0,
                                       duration: el.animDuration ?? (previewEntrance.linear ? 1.5 : 0.65),
@@ -2498,7 +2503,9 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                               <ElementBody el={el} animate={false} />
                             </motion.div>
                           ) : (
-                            <ElementBody el={el} animate={false} />
+                            <div key={animPreview?.nonce ?? "static"} className="w-full h-full">
+                              <ElementBody el={el} animate={!!animPreview} />
+                            </div>
                           )}
 
                           {isSelected && !isEditing && (
@@ -3288,7 +3295,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                     <input
                       type="range"
                       min={0}
-                      max={4}
+                      max={10}
                       step={0.1}
                       value={selected.animDelay ?? 0}
                       onChange={(e) => mutateElement(selected.id, (el) => ({ ...el, animDelay: Number(e.target.value) }))}
@@ -3310,7 +3317,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                     <input
                       type="range"
                       min={0.1}
-                      max={5}
+                      max={10}
                       step={0.1}
                       value={selected.animDuration ?? (selected.anim === "typewriter" ? 1.5 : 0.65)}
                       onChange={(e) => mutateElement(selected.id, (el) => ({ ...el, animDuration: Number(e.target.value) }))}
