@@ -3052,7 +3052,11 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                                 const res = await fetch("/api/images", { method: "POST", body: fd });
                                 if (res.ok) {
                                   const json = await res.json();
-                                  setPhoto(selected.id, { audioSrc: `/api/images/${json.id}` });
+                                  if (selected.type === "photo") {
+                                    setPhoto(selected.id, { audioSrc: `/api/images/${json.id}` });
+                                  } else if (selected.type === "shape") {
+                                    setShape(selected.id, { audioSrc: `/api/images/${json.id}` });
+                                  }
                                 }
                               }
                             };
@@ -3067,7 +3071,10 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                           <div className="flex gap-1 mb-2">
                             <span className="text-xs text-ink bg-paper border border-hairline px-2 py-1 rounded-md flex-1 truncate">Audio Attached</span>
                             <button
-                              onClick={() => setPhoto(selected.id, { audioSrc: undefined, audioStartTime: undefined, audioEndTime: undefined })}
+                              onClick={() => {
+                                if (selected.type === "photo") setPhoto(selected.id, { audioSrc: undefined, audioStartTime: undefined, audioEndTime: undefined });
+                                else if (selected.type === "shape") setShape(selected.id, { audioSrc: undefined, audioStartTime: undefined, audioEndTime: undefined });
+                              }}
                               className="text-xs text-red-500 hover:text-red-700 bg-red-50 px-2 rounded-md"
                             >
                               ✕
@@ -3079,14 +3086,22 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                                 type="number"
                                 placeholder="Start"
                                 value={selected.audioStartTime ?? ""}
-                                onChange={(e) => setPhoto(selected.id, { audioStartTime: e.target.value ? parseFloat(e.target.value) : undefined })}
+                                onChange={(e) => {
+                                  const val = e.target.value ? parseFloat(e.target.value) : undefined;
+                                  if (selected.type === "photo") setPhoto(selected.id, { audioStartTime: val });
+                                  else if (selected.type === "shape") setShape(selected.id, { audioStartTime: val });
+                                }}
                                 className="w-1/2 bg-transparent text-xs text-ink placeholder-ink-soft focus:outline-none px-2 py-1 border-b border-hairline"
                               />
                               <input
                                 type="number"
                                 placeholder="End"
                                 value={selected.audioEndTime ?? ""}
-                                onChange={(e) => setPhoto(selected.id, { audioEndTime: e.target.value ? parseFloat(e.target.value) : undefined })}
+                                onChange={(e) => {
+                                  const val = e.target.value ? parseFloat(e.target.value) : undefined;
+                                  if (selected.type === "photo") setPhoto(selected.id, { audioEndTime: val });
+                                  else if (selected.type === "shape") setShape(selected.id, { audioEndTime: val });
+                                }}
                                 className="w-1/2 bg-transparent text-xs text-ink placeholder-ink-soft focus:outline-none px-2 py-1 border-b border-hairline"
                               />
                             </div>
@@ -3168,6 +3183,31 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                         className={inputCls}
                       />
                     </Field>
+                    <Field label="Frame">
+                      <div className="flex gap-1">
+                        {(["plain", "rounded", "polaroid", "circle"] as const).map((f) => (
+                          <button
+                            key={f}
+                            onClick={() => setMap(selected.id, { frame: f })}
+                            className={`flex-1 text-xs border rounded-md py-1.5 capitalize ${
+                              (selected.frame || "rounded") === f ? "border-accent text-accent" : "border-hairline hover:border-ink-soft"
+                            }`}
+                          >
+                            {f}
+                          </button>
+                        ))}
+                      </div>
+                    </Field>
+                    {selected.frame === "polaroid" && (
+                      <Field label="Caption">
+                        <input
+                          value={selected.caption ?? ""}
+                          onChange={(e) => setMap(selected.id, { caption: e.target.value })}
+                          placeholder="Paris, France ♡"
+                          className={inputCls}
+                        />
+                      </Field>
+                    )}
                     <Slider
                       label={`Border — ${selected.borderW ?? 0}px`}
                       min={0}
@@ -3209,6 +3249,23 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                     >
                       Invisible (Background music)
                     </button>
+                    {!selected.invisible && (
+                      <Field label="Player Theme">
+                        <div className="flex gap-1 mb-4">
+                          {(["glass", "minimal", "solid", "neon"] as const).map((s) => (
+                            <button
+                              key={s}
+                              onClick={() => setAudio(selected.id, { playerTheme: s })}
+                              className={`flex-1 text-[10px] border rounded-md py-1.5 capitalize ${
+                                (selected.playerTheme || "glass") === s ? "border-accent text-accent" : "border-hairline hover:border-ink-soft"
+                              }`}
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      </Field>
+                    )}
                     <Field label="Trim (seconds)">
                       <div className="flex gap-2">
                         <input

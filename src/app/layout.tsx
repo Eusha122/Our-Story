@@ -103,7 +103,7 @@ export default function RootLayout({
       lang="en"
       className={`${serif.variable} ${sans.variable} ${script.variable} ${dancing.variable} ${hand.variable} ${elegant.variable} ${typewriter.variable} ${pacifico.variable} ${montserrat.variable} ${lora.variable} ${bebas.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body suppressHydrationWarning className="min-h-full flex flex-col">{children}</body>
     </html>
   );
 }

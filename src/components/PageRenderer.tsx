@@ -492,13 +492,14 @@ function TextBody({ el, animate = false }: { el: TextElement; animate?: boolean 
   );
 }
 
-function ShapeBody({ el }: { el: ShapeElement }) {
+function ShapeBody({ el, animate }: { el: ShapeElement; animate: boolean }) {
   const border = el.borderW ? `${el.borderW}px solid ${el.borderColor ?? "#2b2620"}` : undefined;
   
   const isVideo = el.srcType === "video";
+  const isMap = el.srcType === "map";
   const bgStyle = {
-    backgroundColor: el.src && !isVideo ? undefined : el.fill,
-    backgroundImage: el.src && !isVideo ? `url(${el.src})` : undefined,
+    backgroundColor: el.src && !isVideo && !isMap ? undefined : el.fill,
+    backgroundImage: el.src && !isVideo && !isMap ? `url(${el.src})` : undefined,
     backgroundPosition: `${el.cropX ?? 50}% ${el.cropY ?? 50}%`
   };
   const videoEl = isVideo ? (
@@ -513,6 +514,19 @@ function ShapeBody({ el }: { el: ShapeElement }) {
     />
   ) : null;
 
+  const mapEl = isMap && el.src ? (
+    <iframe
+      width="100%"
+      height="100%"
+      style={{ border: 0, pointerEvents: animate ? "auto" : "none" }}
+      loading="lazy"
+      allowFullScreen
+      src={`https://www.google.com/maps?q=${encodeURIComponent(el.src)}&output=embed`}
+    />
+  ) : null;
+
+  const innerEl = videoEl || mapEl;
+
   const SHAPE_MASKS: Partial<Record<ShapeKind, string>> = {
     heart: HEART_MASK,
     star: STAR_MASK,
@@ -521,10 +535,10 @@ function ShapeBody({ el }: { el: ShapeElement }) {
     cloud: CLOUD_MASK,
   };
 
+  let content = null;
+
   if (el.shape in SHAPE_MASKS) {
     const mask = SHAPE_MASKS[el.shape as keyof typeof SHAPE_MASKS];
-    // CSS mask (not SVG fill) so gradients work here exactly like every
-    // other shape; the border is a second, inset copy of the same mask.
     const maskStyle: CSSProperties = {
       WebkitMaskImage: mask,
       maskImage: mask,
@@ -533,7 +547,7 @@ function ShapeBody({ el }: { el: ShapeElement }) {
       WebkitMaskRepeat: "no-repeat",
       maskRepeat: "no-repeat",
     };
-    return (
+    content = (
       <div className="relative w-full h-full">
         {el.borderW ? (
           <div className="absolute inset-0" style={{ ...maskStyle, background: el.borderColor ?? "#2b2620" }} />
@@ -542,31 +556,74 @@ function ShapeBody({ el }: { el: ShapeElement }) {
           className="absolute bg-cover overflow-hidden"
           style={{ ...maskStyle, ...bgStyle, inset: el.borderW ?? 0 }}
         >
-          {videoEl}
+          {innerEl}
         </div>
       </div>
     );
-  }
-  if (el.shape === "circle") {
-    return <div className="w-full h-full bg-cover overflow-hidden" style={{ ...bgStyle, borderRadius: "50%", border }}>{videoEl}</div>;
-  }
-  if (el.shape === "tape") {
-    return (
+  } else if (el.shape === "circle") {
+    content = <div className="w-full h-full bg-cover overflow-hidden" style={{ ...bgStyle, borderRadius: "50%", border }}>{innerEl}</div>;
+  } else if (el.shape === "tape") {
+    content = (
       <div
         className="w-full h-full bg-cover overflow-hidden"
         style={{
           ...bgStyle,
           borderRadius: el.radius ?? 2,
-          // Slightly torn short edges, like real washi tape.
           clipPath: "polygon(1.5% 0%, 98.5% 4%, 100% 50%, 98% 96%, 2% 100%, 0% 55%)",
         }}
       >
-        {videoEl}
+        {innerEl}
       </div>
     );
+  } else {
+    // rect and line
+    content = <div className="w-full h-full bg-cover overflow-hidden" style={{ ...bgStyle, borderRadius: el.radius ?? 0, border }}>{innerEl}</div>;
   }
-  // rect and line
-  return <div className="w-full h-full bg-cover overflow-hidden" style={{ ...bgStyle, borderRadius: el.radius ?? 0, border }}>{videoEl}</div>;
+
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const isPlaying = useRef(false);
+
+  const handleShapeClick = () => {
+    if (!animate || !el.audioSrc || !audioRef.current) return;
+    const audio = audioRef.current;
+    if (audio.paused) {
+      if (el.audioStartTime !== undefined) audio.currentTime = el.audioStartTime;
+      audio.play().catch(() => {});
+      isPlaying.current = true;
+    } else {
+      audio.pause();
+      isPlaying.current = false;
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (!audioRef.current || el.audioEndTime === undefined) return;
+    if (audioRef.current.currentTime >= el.audioEndTime && isPlaying.current) {
+      audioRef.current.pause();
+      isPlaying.current = false;
+      if (el.audioStartTime !== undefined) {
+        audioRef.current.currentTime = el.audioStartTime;
+      }
+    }
+  };
+
+  return (
+    <div 
+      className="w-full h-full" 
+      onClick={handleShapeClick}
+      style={{ cursor: animate && el.audioSrc ? "pointer" : undefined }}
+    >
+      {content}
+      {el.audioSrc && (
+        <audio 
+          ref={audioRef} 
+          src={el.audioSrc} 
+          onTimeUpdate={handleTimeUpdate}
+          preload="auto"
+        />
+      )}
+    </div>
+  );
 }
 
 /* ---- Ambient background effects ---- */
@@ -798,7 +855,7 @@ function ScratchOffOverlay({ el, children, animate }: { el: PhotoElement; childr
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    if (!animate || !el.scratchOff) return;
+    if (!el.scratchOff) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -810,7 +867,7 @@ function ScratchOffOverlay({ el, children, animate }: { el: PhotoElement; childr
       ctx.fillStyle = Math.random() > 0.5 ? "#b0b0b0" : "#d0d0d0";
       ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 2, 2);
     }
-  }, [animate, el.scratchOff, el.w, el.h]);
+  }, [el.scratchOff, el.w, el.h]);
 
   const handleScratch = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!animate || !el.scratchOff) return;
@@ -849,65 +906,189 @@ function ScratchOffOverlay({ el, children, animate }: { el: PhotoElement; childr
 
 function AudioBody({ el, animate }: { el: AudioElement; animate: boolean }) {
   const audioRef = useRef<HTMLAudioElement>(null);
-  const isPlaying = useRef(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(el.startTime ?? 0);
+  const [duration, setDuration] = useState(0);
 
   useEffect(() => {
-    if (audioRef.current && el.startTime !== undefined) {
+    if (audioRef.current && el.startTime !== undefined && !isPlaying) {
       audioRef.current.currentTime = el.startTime;
+      setCurrentTime(el.startTime);
     }
   }, [el.startTime]);
 
   const handleTimeUpdate = () => {
-    if (!audioRef.current || el.endTime === undefined) return;
-    if (audioRef.current.currentTime >= el.endTime && isPlaying.current) {
+    if (!audioRef.current) return;
+    setCurrentTime(audioRef.current.currentTime);
+    if (el.endTime !== undefined && audioRef.current.currentTime >= el.endTime) {
       audioRef.current.pause();
-      isPlaying.current = false;
+      setIsPlaying(false);
       if (el.startTime !== undefined) {
         audioRef.current.currentTime = el.startTime;
+        setCurrentTime(el.startTime);
       }
     }
   };
 
-  const handlePlay = () => {
-    isPlaying.current = true;
-    if (audioRef.current && el.endTime !== undefined && audioRef.current.currentTime >= el.endTime) {
-       audioRef.current.currentTime = el.startTime ?? 0;
+  const handleLoadedMetadata = () => {
+    if (audioRef.current) {
+      setDuration(audioRef.current.duration);
     }
   };
 
-  const handlePause = () => {
-    isPlaying.current = false;
+  const handlePlay = () => setIsPlaying(true);
+  const handlePause = () => setIsPlaying(false);
+
+  const togglePlay = (e?: React.PointerEvent) => {
+    e?.stopPropagation();
+    if (!animate) return;
+    const v = audioRef.current;
+    if (!v) return;
+    if (v.paused) v.play();
+    else v.pause();
   };
 
-  if (el.invisible && animate) {
+  const handleScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    if (!audioRef.current) return;
+    const t = Number(e.target.value);
+    audioRef.current.currentTime = t;
+    setCurrentTime(t);
+  };
+
+  const handlePrev = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    if (!animate) return;
+    if (!audioRef.current) return;
+    audioRef.current.currentTime = el.startTime ?? 0;
+    setCurrentTime(el.startTime ?? 0);
+    audioRef.current.play();
+  };
+
+  const handleNext = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    if (!animate) return;
+    if (!audioRef.current) return;
+    const end = el.endTime ?? duration;
+    audioRef.current.currentTime = end;
+    setCurrentTime(end);
+    audioRef.current.pause();
+  };
+
+  if (el.invisible) {
     return (
       <audio 
         ref={audioRef}
         src={el.src} 
-        autoPlay={el.autoplay} 
+        autoPlay={animate && el.autoplay} 
         loop={el.loop} 
         style={{ display: 'none' }}
         onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
         onPlay={handlePlay}
         onPause={handlePause}
       />
     );
   }
+
+  const formatTime = (time: number) => {
+    if (isNaN(time)) return "0:00";
+    const m = Math.floor(time / 60);
+    const s = Math.floor(time % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const theme = el.playerTheme || "glass";
+  
+  let containerCls = "w-full h-full flex items-center justify-between px-4 relative overflow-hidden shadow-xl backdrop-blur-md ";
+  let textCls = "text-xs font-medium ";
+  let iconCls = "flex items-center justify-center transition-transform hover:scale-110 ";
+  let playBtnCls = "w-10 h-10 shrink-0 rounded-full flex items-center justify-center transition-transform hover:scale-110 shadow-md ";
+  
+  if (theme === "glass") {
+    containerCls += "bg-white/50 border border-white/60 rounded-3xl";
+    textCls += "text-ink";
+    iconCls += "text-ink-soft hover:text-ink";
+    playBtnCls += "bg-white/80 text-ink backdrop-blur-md border border-white";
+  } else if (theme === "minimal") {
+    containerCls += "bg-[#2b2620] border border-[#3f3830] rounded-xl";
+    textCls += "text-paper";
+    iconCls += "text-paper/60 hover:text-paper";
+    playBtnCls += "bg-paper text-ink";
+  } else if (theme === "solid") {
+    containerCls += "bg-paper border border-hairline rounded-sm";
+    textCls += "text-ink";
+    iconCls += "text-ink-soft hover:text-ink";
+    playBtnCls += "bg-accent text-paper";
+  } else if (theme === "neon") {
+    containerCls += "bg-black border border-white/20 rounded-full shadow-[0_0_20px_rgba(255,255,255,0.4)]";
+    textCls += "text-white";
+    iconCls += "text-white/70 hover:text-white";
+    playBtnCls += "bg-transparent border border-white text-white shadow-[0_0_15px_rgba(255,255,255,0.6)]";
+  }
+
+  const start = el.startTime ?? 0;
+  const end = el.endTime ?? duration;
+  const progress = duration ? ((currentTime - start) / (end - start)) * 100 : 0;
+
   return (
-    <div className={`w-full h-full flex flex-col items-center justify-center bg-white/80 backdrop-blur-md rounded-2xl shadow-xl border border-hairline relative ${el.invisible ? 'opacity-50' : ''}`}>
-      <div className="text-3xl mb-2">🎵</div>
+    <div className={containerCls} style={{ pointerEvents: animate ? "auto" : "none" }}>
       <audio
         ref={audioRef}
-        controls
         src={el.src}
-        autoPlay={el.autoplay}
+        autoPlay={animate && el.autoplay}
         loop={el.loop}
-        className="w-[90%] h-10"
-        style={{ pointerEvents: "auto" }}
+        style={{ display: "none" }}
         onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
         onPlay={handlePlay}
         onPause={handlePause}
       />
+      
+      <div className="flex items-center gap-4 w-full">
+        {/* Play Controls */}
+        <div className="flex items-center gap-3 shrink-0">
+          <button onPointerDown={handlePrev} className={iconCls} title="Restart">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11 17l-5-5 5-5v10zM18 17l-5-5 5-5v10zM6 17H4V7h2v10z"/></svg>
+          </button>
+          
+          <button onPointerDown={togglePlay} className={playBtnCls}>
+            {isPlaying ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="ml-1"><path d="M8 5v14l11-7z"/></svg>
+            )}
+          </button>
+          
+          <button onPointerDown={handleNext} className={iconCls} title="End">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M13 7l5 5-5 5V7zM6 7l5 5-5 5V7zM18 7h2v10h-2V7z"/></svg>
+          </button>
+        </div>
+
+        {/* Timeline */}
+        <div className="flex flex-col flex-1 gap-1 w-full relative z-10">
+          <div className="flex justify-between items-center w-full">
+             <span className={textCls}>{formatTime(currentTime)}</span>
+             <span className={textCls}>{formatTime(end)}</span>
+          </div>
+          <div className="relative w-full h-1.5 bg-black/10 rounded-full flex items-center overflow-hidden">
+            <div 
+              className="absolute left-0 h-full rounded-full pointer-events-none"
+              style={{ width: `${Math.min(100, Math.max(0, progress))}%`, backgroundColor: theme === 'neon' ? '#fff' : (theme === 'minimal' ? '#f2efeb' : '#b76e79') }} 
+            />
+            <input 
+              type="range"
+              min={start}
+              max={end}
+              step={0.1}
+              value={currentTime}
+              onChange={handleScrub}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" 
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1348,25 +1529,47 @@ function EnvelopeBody({ el, animate }: { el: EnvelopeElement; animate: boolean }
   );
 }
 
-function MapBody({ el }: { el: MapElement }) {
+function MapBody({ el, animate }: { el: MapElement; animate: boolean }) {
+  const radius = el.frame === "circle" ? "50%" : el.frame === "rounded" ? 20 : el.frame === "plain" ? 0 : 16;
+  
+  const mapIframe = (
+    <iframe
+      width="100%"
+      height="100%"
+      style={{ border: 0, pointerEvents: animate ? "auto" : "none" }}
+      loading="lazy"
+      allowFullScreen
+      src={`https://www.google.com/maps?q=${encodeURIComponent(el.query || "Paris")}&output=embed`}
+    />
+  );
+
+  if (el.frame === "polaroid") {
+    return (
+      <div className={`w-full h-full bg-white shadow-md flex flex-col p-[6%] pb-0 pointer-events-none`}>
+        <div className="flex-1 overflow-hidden bg-[#e5e5e5]">
+          {mapIframe}
+        </div>
+        <div
+          className="h-[18%] min-h-[34px] flex items-center justify-center text-[#5a5248] overflow-hidden"
+          style={{ fontFamily: "var(--font-script), 'Dancing Script', cursive", fontSize: Math.max(20, el.w * 0.075) }}
+        >
+          {el.caption ?? ""}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div 
       className="w-full h-full bg-paper overflow-hidden relative shadow-md pointer-events-none"
       style={{
-        borderRadius: 16,
+        borderRadius: radius,
         borderWidth: el.borderW ?? 0,
         borderColor: el.borderColor ?? "transparent",
         borderStyle: "solid"
       }}
     >
-      <iframe
-        width="100%"
-        height="100%"
-        style={{ border: 0, pointerEvents: "auto" }}
-        loading="lazy"
-        allowFullScreen
-        src={`https://www.google.com/maps?q=${encodeURIComponent(el.query || "Paris")}&output=embed`}
-      />
+      {mapIframe}
     </div>
   );
 }
@@ -1374,11 +1577,11 @@ function MapBody({ el }: { el: MapElement }) {
 export function ElementBody({ el, animate }: { el: PageElement; animate: boolean }) {
   if (el.type === "photo") return <PhotoBody el={el} animate={animate} />;
   if (el.type === "text") return <TextBody el={el} animate={animate} />;
-  if (el.type === "shape") return <ShapeBody el={el} />;
+  if (el.type === "shape") return <ShapeBody el={el} animate={animate} />;
   if (el.type === "video") return <VideoBody el={el} />;
   if (el.type === "audio") return <AudioBody el={el} animate={animate} />;
   if (el.type === "envelope") return <EnvelopeBody el={el} animate={animate} />;
-  if (el.type === "map") return <MapBody el={el} />;
+  if (el.type === "map") return <MapBody el={el} animate={animate} />;
   return (
     <div
       className="w-full h-full flex items-center justify-center select-none"

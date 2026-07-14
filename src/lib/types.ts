@@ -130,6 +130,10 @@ export interface ShapeElement extends ElementBase {
   src?: string;
   srcType?: "photo" | "video" | "map";
   playButtonStyle?: PlayButtonStyle;
+  /** Interactive Audio */
+  audioSrc?: string;
+  audioStartTime?: number;
+  audioEndTime?: number;
 }
 
 export type TextFont = "serif" | "elegant" | "sans" | "script" | "dancing" | "hand" | "type" | "pacifico" | "montserrat" | "lora" | "bebas";
@@ -213,6 +217,7 @@ export interface AudioElement extends ElementBase {
   invisible?: boolean;
   startTime?: number;
   endTime?: number;
+  playerTheme?: PlayButtonStyle;
 }
 
 export interface EnvelopeElement extends ElementBase {
@@ -226,6 +231,8 @@ export interface EnvelopeElement extends ElementBase {
 export interface MapElement extends ElementBase {
   type: "map";
   query: string;
+  frame?: PhotoFrame;
+  caption?: string;
   borderW?: number;
   borderColor?: string;
 }
