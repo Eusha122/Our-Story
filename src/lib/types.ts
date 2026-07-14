@@ -128,6 +128,8 @@ export interface ShapeElement extends ElementBase {
   borderW?: number;
   borderColor?: string;
   src?: string;
+  srcType?: "photo" | "video";
+  playButtonStyle?: PlayButtonStyle;
 }
 
 export type TextFont = "serif" | "elegant" | "sans" | "script" | "dancing" | "hand" | "type" | "pacifico" | "montserrat" | "lora" | "bebas";
@@ -184,13 +186,17 @@ export interface StickerElement extends ElementBase {
   emoji: string;
 }
 
-export type VideoFrame = "plain" | "rounded";
+export type VideoFrame = "plain" | "rounded" | "polaroid" | "circle";
+
+export type PlayButtonStyle = "glass" | "minimal" | "solid" | "neon";
 
 export interface VideoElement extends ElementBase {
   type: "video";
   src: string; // /api/images/<id>
   frame: VideoFrame;
+  caption?: string;
   controls?: boolean; // default true
+  playButtonStyle?: PlayButtonStyle;
   loop?: boolean;
   muted?: boolean;
   autoplay?: boolean;

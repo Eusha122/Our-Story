@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { nanoid } from "nanoid";
 import { motion } from "framer-motion";
@@ -621,6 +621,66 @@ function timeLabel(sqliteUtc: string) {
   });
 }
 
+const RichTextEditor = React.memo(({ 
+  el, 
+  onBlur, 
+  onChange,
+  onPointerDown
+}: { 
+  el: TextElement, 
+  onBlur: () => void, 
+  onChange: (html: string) => void,
+  onPointerDown: (e: React.PointerEvent) => void
+}) => {
+  const ref = useRef<HTMLDivElement>(null);
+  
+  // Set initial content only once
+  useEffect(() => {
+    if (ref.current && ref.current.innerHTML !== el.text) {
+      ref.current.innerHTML = el.text;
+    }
+    // Auto focus
+    setTimeout(() => {
+      if (ref.current) {
+        ref.current.focus();
+        // Move cursor to end
+        const sel = window.getSelection();
+        if (sel) {
+          const range = document.createRange();
+          range.selectNodeContents(ref.current);
+          range.collapse(false);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      }
+    }, 10);
+  }, []); // Intentionally only run on mount to prevent cursor jump
+
+  return (
+    <div
+      ref={ref}
+      contentEditable
+      suppressContentEditableWarning
+      onBlur={onBlur}
+      onInput={(e) => onChange(e.currentTarget.innerHTML)}
+      onPointerDown={onPointerDown}
+      className="w-full h-full bg-transparent outline-none overflow-hidden rich-text-editor"
+      style={{
+        fontFamily: FONT_MAP[el.font] ?? FONT_MAP.serif,
+        fontSize: el.size,
+        color: Array.isArray(el.color) ? el.color[0] : el.color,
+        textAlign: el.align,
+        fontWeight: el.bold ? 700 : 400,
+        fontStyle: el.italic ? "italic" : "normal",
+        textDecoration: el.underline ? "underline" : undefined,
+        textTransform: el.uppercase ? "uppercase" : undefined,
+        letterSpacing: el.letterSpacing ? `${el.letterSpacing}px` : undefined,
+        lineHeight: el.lineHeight ?? 1.45,
+      }}
+    />
+  );
+});
+
 /* ------------------------------------------------------------------ */
 /* main component                                                      */
 /* ------------------------------------------------------------------ */
@@ -629,6 +689,11 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
   const [pages, setPages] = useState<Page[]>(initialPages);
   const [currentId, setCurrentId] = useState<string | null>(initialPages[0]?.id ?? null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  
+  // Track selection for rich text editing when focus is temporarily lost (e.g. to a color picker)
+  const savedRangeRef = useRef<Range | null>(null);
+
+
   const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
   const setSelectedId = useCallback((id: string | null) => {
     setSelectedIds(id ? [id] : []);
@@ -840,6 +905,46 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
     },
     [currentId, scheduleSave]
   );
+  const handleTextStyle = useCallback((id: string, prop: string, value: any) => {
+    updateCurrentPage(p => {
+      return {
+        ...p,
+        data: {
+          ...p.data,
+          elements: p.data.elements.map(e => {
+            if (e.id !== id) return e;
+            
+            const editorDiv = document.querySelector('.rich-text-editor') as HTMLElement;
+            if (editorDiv && editorDiv.contains(window.getSelection()?.anchorNode ?? null)) {
+              const sel = window.getSelection();
+              
+              if ((!sel || sel.rangeCount === 0 || sel.isCollapsed) && savedRangeRef.current) {
+                sel?.removeAllRanges();
+                sel?.addRange(savedRangeRef.current);
+              }
+              
+              if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+                if (prop === 'bold') document.execCommand('bold', false);
+                else if (prop === 'italic') document.execCommand('italic', false);
+                else if (prop === 'underline') document.execCommand('underline', false);
+                else if (prop === 'color') document.execCommand('foreColor', false, value);
+                else if (prop === 'font') {
+                  const fontFamily = FONT_MAP[value as TextFont] ?? FONT_MAP.serif;
+                  document.execCommand('fontName', false, fontFamily);
+                }
+                
+                savedRangeRef.current = sel.getRangeAt(0).cloneRange();
+                
+                return { ...e, text: editorDiv.innerHTML };
+              }
+            }
+            
+            return { ...e, [prop]: value };
+          })
+        }
+      };
+    });
+  }, [updateCurrentPage]);
 
   const mutateData = useCallback(
     (fn: (d: PageData) => PageData) => {
@@ -856,6 +961,16 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
       }));
     },
     [mutateData]
+  );
+
+  const mutateSelected = useCallback(
+    (fn: (el: PageElement) => PageElement) => {
+      mutateData((d) => ({
+        ...d,
+        elements: d.elements.map((el) => (selectedIds.includes(el.id) ? fn(el) : el)),
+      }));
+    },
+    [mutateData, selectedIds]
   );
 
   // Typed helpers so JSX stays terse.
@@ -923,8 +1038,14 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
 
   useEffect(() => {
     const onPaste = async (e: ClipboardEvent) => {
-      // Don't intercept paste if typing in a text input or textarea
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      // Don't intercept paste if typing in a text input, textarea, or contentEditable element
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target instanceof HTMLElement && e.target.isContentEditable)
+      ) {
+        return;
+      }
 
       const items = e.clipboardData?.items;
       if (!items) return;
@@ -938,7 +1059,21 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
         }
       }
 
-      if (!files.length) return;
+      if (!files.length) {
+        const item = localStorage.getItem("ourstory_clipboard");
+        if (item && page) {
+          try {
+            const parsed = JSON.parse(item);
+            const elsToCopy = Array.isArray(parsed) ? parsed : [parsed];
+            const copies: PageElement[] = elsToCopy.map((el: PageElement) => ({
+              ...el, id: nanoid(8), x: el.x + 36, y: el.y + 36, z: nextZ()
+            }));
+            mutateData((d) => ({ ...d, elements: [...d.elements, ...copies] }));
+            setSelectedIds(copies.map(c => c.id));
+          } catch (err) {}
+        }
+        return;
+      }
 
       setUploading(true);
       try {
@@ -991,7 +1126,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
     
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-  }, [mutateData, nextZ, fetchUploads]);
+  }, [mutateData, nextZ, fetchUploads, page, setSelectedIds]);
 
   const addText = useCallback(() => {
     if (!page) return;
@@ -1406,7 +1541,14 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
           // Group
           const groupId = nanoid(8);
           mutateData((d) => {
-            const nextElements = d.elements.map(el => selectedIds.includes(el.id) ? { ...el, groupId } : el);
+            const selectedEls = d.elements.filter(el => selectedIds.includes(el.id));
+            const primaryAnimEl = selectedEls.find(el => el.anim && el.anim !== "none") || selectedEls[0];
+            const animProps = {
+              anim: primaryAnimEl?.anim,
+              animDelay: primaryAnimEl?.animDelay,
+              animDuration: primaryAnimEl?.animDuration
+            };
+            const nextElements = d.elements.map(el => selectedIds.includes(el.id) ? { ...el, groupId, ...animProps } : el);
             return { ...d, elements: nextElements };
           });
         }
@@ -1423,21 +1565,6 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
         return;
       }
       
-      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-        const item = localStorage.getItem('ourstory_clipboard');
-        if (item && page) {
-          try {
-            const parsed = JSON.parse(item);
-            const elsToCopy = Array.isArray(parsed) ? parsed : [parsed];
-            const copies: PageElement[] = elsToCopy.map((el: PageElement) => ({
-              ...el, id: nanoid(8), x: el.x + 36, y: el.y + 36, z: nextZ() 
-            }));
-            mutateData((d) => ({ ...d, elements: [...d.elements, ...copies] }));
-            setSelectedIds(copies.map(c => c.id));
-          } catch (err) {}
-        }
-        return;
-      }
 
       if (selectedIds.length === 0) return;
       
@@ -1656,16 +1783,17 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
             }
           }
 
-          // If a SINGLE photo is dropped onto a shape, replace the shape's image
-          if (idsToMove.length === 1 && el.type === "photo" && el.src) {
+          // If a SINGLE photo or video is dropped onto a shape, replace the shape's image
+          if (idsToMove.length === 1 && (el.type === "photo" || el.type === "video") && el.src) {
             const shapeNode = targetNode?.closest("[data-shape-id]");
             if (shapeNode) {
               const shapeId = shapeNode.getAttribute("data-shape-id");
               if (shapeId && shapeId !== el.id) {
-                const photoSrc = el.src;
+                const mediaSrc = el.src;
+                const mediaType = el.type;
                 mutateData((d) => {
                   let nextElements = d.elements.map(e => 
-                    e.id === shapeId && e.type === "shape" ? { ...e, src: photoSrc } : e
+                    e.id === shapeId && e.type === "shape" ? { ...e, src: mediaSrc, srcType: mediaType } : e
                   );
                   nextElements = nextElements.filter(e => e.id !== el.id);
                   return { ...d, elements: nextElements };
@@ -1777,20 +1905,76 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
   const startRotate = useCallback(
     (e: React.PointerEvent, el: PageElement) => {
       const canvas = canvasRef.current;
-      if (!canvas) return;
+      if (!canvas || !page) return;
+      
+      let idsToRotate = [el.id];
+      if (el.groupId) {
+        idsToRotate = page.data.elements.filter(e => e.groupId === el.groupId).map(e => e.id);
+      } else if (selectedIds.includes(el.id)) {
+        idsToRotate = selectedIds;
+      }
+
+      const els = page.data.elements.filter(e => idsToRotate.includes(e.id));
+      const minX = Math.min(...els.map(e => e.x));
+      const minY = Math.min(...els.map(e => e.y));
+      const maxX = Math.max(...els.map(e => e.x + e.w));
+      const maxY = Math.max(...els.map(e => e.y + e.h));
+      const groupCX = minX + (maxX - minX) / 2;
+      const groupCY = minY + (maxY - minY) / 2;
+
       const rect = canvas.getBoundingClientRect();
       const s = scaleRef.current;
-      const cx = rect.left + (el.x + el.w / 2) * s;
-      const cy = rect.top + (el.y + el.h / 2) * s;
+      const screenCX = rect.left + groupCX * s;
+      const screenCY = rect.top + groupCY * s;
+      
+      const origState = new Map<string, { cx: number, cy: number, rot: number, w: number, h: number }>();
+      els.forEach(e => {
+        origState.set(e.id, { cx: e.x + e.w / 2, cy: e.y + e.h / 2, rot: e.rotation, w: e.w, h: e.h });
+      });
+      
+      let prevDeg = (Math.atan2(e.clientY - screenCY, e.clientX - screenCX) * 180) / Math.PI;
+      let cumulativeDelta = 0;
+
       trackPointer(e, (_dx, _dy, ev) => {
-        let deg = (Math.atan2(ev.clientY - cy, ev.clientX - cx) * 180) / Math.PI + 90;
-        // Snap near right angles for tidy layouts.
-        const snapped = [0, 90, 180, -90, -180].find((a) => Math.abs(deg - a) < 4);
-        if (snapped !== undefined) deg = snapped;
-        mutateElement(el.id, (cur) => ({ ...cur, rotation: Math.round(deg * 10) / 10 }));
+        const currentDeg = (Math.atan2(ev.clientY - screenCY, ev.clientX - screenCX) * 180) / Math.PI;
+        let stepDelta = currentDeg - prevDeg;
+        if (stepDelta > 180) stepDelta -= 360;
+        if (stepDelta < -180) stepDelta += 360;
+        cumulativeDelta += stepDelta;
+        prevDeg = currentDeg;
+        
+        let deltaDeg = cumulativeDelta;
+        const primaryOrigRot = origState.get(el.id)?.rot || 0;
+        const targetRot = primaryOrigRot + deltaDeg;
+        
+        const snapped = [0, 90, 180, 270, 360, -90, -180, -270, -360].find((a) => Math.abs(targetRot - a) < 4);
+        if (snapped !== undefined) {
+           deltaDeg = snapped - primaryOrigRot;
+        }
+
+        mutateData((d) => {
+          const nextElements = d.elements.map(e => {
+            if (origState.has(e.id)) {
+              const orig = origState.get(e.id)!;
+              const angle = Math.atan2(orig.cy - groupCY, orig.cx - groupCX);
+              const dist = Math.hypot(orig.cx - groupCX, orig.cy - groupCY);
+              const newAngle = angle + deltaDeg * (Math.PI / 180);
+              const newCX = groupCX + dist * Math.cos(newAngle);
+              const newCY = groupCY + dist * Math.sin(newAngle);
+              return { 
+                ...e, 
+                x: Math.round((newCX - orig.w / 2) * 10) / 10, 
+                y: Math.round((newCY - orig.h / 2) * 10) / 10, 
+                rotation: Math.round((orig.rot + deltaDeg) * 10) / 10 
+              };
+            }
+            return e;
+          });
+          return { ...d, elements: nextElements };
+        });
       });
     },
-    [mutateElement]
+    [mutateData, page, selectedIds]
   );
 
   const previewAnim = useCallback((id: string, anim: EntranceAnim) => {
@@ -1932,7 +2116,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
               <>
                 <select
                   value={selected.font}
-                  onChange={(e) => setText(selected.id, { font: e.target.value as TextFont })}
+                  onChange={(e) => handleTextStyle(selected.id, 'font', e.target.value)}
                   className={`${selectCls} w-32 shrink-0 h-9 py-0`}
                   style={{ fontFamily: FONT_MAP[selected.font] }}
                 >
@@ -1969,14 +2153,14 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                   title="Text color"
                   value={selected.color}
                   suggestions={TEXT_COLORS}
-                  onChange={(c) => setText(selected.id, { color: c })}
+                  onChange={(c) => handleTextStyle(selected.id, 'color', c)}
                   allowGradient
                   size={8}
                 />
                 <span className="w-px h-7 bg-hairline mx-1 shrink-0" />
-                <button onClick={() => setText(selected.id, { bold: !selected.bold })} className={`${tb(!!selected.bold)} w-9 font-bold`}>B</button>
-                <button onClick={() => setText(selected.id, { italic: !selected.italic })} className={`${tb(!!selected.italic)} w-9 italic`}>I</button>
-                <button onClick={() => setText(selected.id, { underline: !selected.underline })} className={`${tb(!!selected.underline)} w-9 underline`}>U</button>
+                <button onPointerDown={(e) => e.preventDefault()} onClick={() => handleTextStyle(selected.id, 'bold', !selected.bold)} className={`${tb(!!selected.bold)} w-9 font-bold`}>B</button>
+                <button onPointerDown={(e) => e.preventDefault()} onClick={() => handleTextStyle(selected.id, 'italic', !selected.italic)} className={`${tb(!!selected.italic)} w-9 italic`}>I</button>
+                <button onPointerDown={(e) => e.preventDefault()} onClick={() => handleTextStyle(selected.id, 'underline', !selected.underline)} className={`${tb(!!selected.underline)} w-9 underline`}>U</button>
                 <button onClick={() => setText(selected.id, { uppercase: !selected.uppercase })} className={`${tb(!!selected.uppercase)} w-9 tracking-widest`}>AA</button>
                 <span className="w-px h-7 bg-hairline mx-1 shrink-0" />
                 <button onClick={() => setText(selected.id, { align: "left" })} className={`${tb(selected.align === "left")} w-9`}>
@@ -2411,6 +2595,21 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                         animPreview && animPreview.id === el.id && animPreview.anim !== "none"
                           ? ENTRANCES[animPreview.anim]
                           : null;
+                      
+                      let groupOrigin: string | undefined;
+                      if (el.groupId) {
+                        const groupEls = page.data.elements.filter((e) => e.groupId === el.groupId);
+                        if (groupEls.length > 1) {
+                          const minX = Math.min(...groupEls.map((e) => e.x));
+                          const minY = Math.min(...groupEls.map((e) => e.y));
+                          const maxX = Math.max(...groupEls.map((e) => e.x + e.w));
+                          const maxY = Math.max(...groupEls.map((e) => e.y + e.h));
+                          const groupCenterX = minX + (maxX - minX) / 2;
+                          const groupCenterY = minY + (maxY - minY) / 2;
+                          groupOrigin = `${groupCenterX - el.x}px ${groupCenterY - el.y}px`;
+                        }
+                      }
+
                       return (
                         <div
                           key={el.id}
@@ -2458,30 +2657,17 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                           }}
                         >
                           {isEditing && el.type === "text" ? (
-                            <textarea
-                              autoFocus
-                              value={el.text}
-                              onChange={(ev) => setText(el.id, { text: ev.target.value })}
+                            <RichTextEditor
+                              el={el}
                               onBlur={() => setEditingTextId(null)}
+                              onChange={(html) => setText(el.id, { text: html })}
                               onPointerDown={(ev) => ev.stopPropagation()}
-                              className="w-full h-full bg-transparent outline-none resize-none"
-                              style={{
-                                fontFamily: FONT_MAP[el.font] ?? FONT_MAP.serif,
-                                fontSize: el.size,
-                                color: firstSolid(el.color),
-                                textAlign: el.align,
-                                fontWeight: el.bold ? 700 : 400,
-                                fontStyle: el.italic ? "italic" : "normal",
-                                textDecoration: el.underline ? "underline" : undefined,
-                                textTransform: el.uppercase ? "uppercase" : undefined,
-                                letterSpacing: el.letterSpacing ? `${el.letterSpacing}px` : undefined,
-                                lineHeight: el.lineHeight ?? 1.45,
-                              }}
                             />
                           ) : (previewEntrance && !(el.type === "text" && el.anim === "typewriter")) ? (
                             <motion.div
                               key={animPreview!.nonce}
                               className="w-full h-full"
+                              style={{ transformOrigin: groupOrigin }}
                               initial={previewEntrance.from}
                               animate={previewEntrance.to}
                               transition={
@@ -3045,7 +3231,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                   <>
                     <Field label="Frame">
                       <div className="flex gap-1">
-                        {(["plain", "rounded"] as const).map((f) => (
+                        {(["plain", "rounded", "polaroid", "circle"] as const).map((f) => (
                           <button
                             key={f}
                             onClick={() => setVideo(selected.id, { frame: f })}
@@ -3058,6 +3244,16 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                         ))}
                       </div>
                     </Field>
+                    {selected.frame === "polaroid" && (
+                      <Field label="Caption">
+                        <input
+                          value={selected.caption ?? ""}
+                          onChange={(e) => setVideo(selected.id, { caption: e.target.value })}
+                          placeholder="11 july 2026 ♡"
+                          className={inputCls}
+                        />
+                      </Field>
+                    )}
                     <div className="flex gap-1">
                       <button
                         onClick={() => setVideo(selected.id, { controls: selected.controls === false })}
@@ -3078,7 +3274,24 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                         Muted
                       </button>
                     </div>
-                    <div>
+                    {selected.controls !== false && (
+                      <Field label="Play Button Theme">
+                        <div className="flex gap-1">
+                          {(["glass", "minimal", "solid", "neon"] as const).map((s) => (
+                            <button
+                              key={s}
+                              onClick={() => setVideo(selected.id, { playButtonStyle: s })}
+                              className={`flex-1 text-[10px] border rounded-md py-1.5 capitalize ${
+                                (selected.playButtonStyle || "glass") === s ? "border-accent text-accent" : "border-hairline hover:border-ink-soft"
+                              }`}
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      </Field>
+                    )}
+                    <div className="mt-2">
                       <button
                         onClick={() => setVideo(selected.id, { autoplay: !selected.autoplay })}
                         className={`w-full text-xs border rounded-md py-1.5 ${selected.autoplay ? "border-accent text-accent" : "border-hairline"}`}
@@ -3133,15 +3346,32 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                           onChange={(v) => setShape(selected.id, { borderW: v })}
                         />
                         {(selected.borderW ?? 0) > 0 && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-ink-soft">Outline color</span>
+                          <div className="flex items-center gap-2 mt-4">
+                            <span className="text-xs text-ink-soft">Border color</span>
                             <ColorChip
-                              title="Outline color"
+                              title="Border color"
                               value={selected.borderColor ?? "#2b2620"}
                               suggestions={BORDER_COLORS}
                               onChange={(c) => setShape(selected.id, { borderColor: c })}
                             />
                           </div>
+                        )}
+                        {selected.srcType === "video" && (
+                          <Field label="Play Button Theme">
+                            <div className="flex gap-1">
+                              {(["glass", "minimal", "solid", "neon"] as const).map((s) => (
+                                <button
+                                  key={s}
+                                  onClick={() => setShape(selected.id, { playButtonStyle: s })}
+                                  className={`flex-1 text-[10px] border rounded-md py-1.5 capitalize ${
+                                    (selected.playButtonStyle || "glass") === s ? "border-accent text-accent" : "border-hairline hover:border-ink-soft"
+                                  }`}
+                                >
+                                  {s}
+                                </button>
+                              ))}
+                            </div>
+                          </Field>
                         )}
                       </>
                     )}
@@ -3258,7 +3488,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                     value={selected.anim ?? "none"}
                     onChange={(e) => {
                       const v = e.target.value as EntranceAnim;
-                      mutateElement(selected.id, (el) => ({ ...el, anim: v }));
+                      mutateSelected((el) => ({ ...el, anim: v }));
                       previewAnim(selected.id, v);
                     }}
                     className={`${selectCls} flex-1`}
@@ -3285,7 +3515,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                       </span>
                       {selected.animDelay !== undefined && (
                         <button
-                          onClick={() => mutateElement(selected.id, (el) => ({ ...el, animDelay: undefined }))}
+                          onClick={() => mutateSelected((el) => ({ ...el, animDelay: undefined }))}
                           className="underline underline-offset-2 hover:text-accent"
                         >
                           auto
@@ -3298,7 +3528,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                       max={10}
                       step={0.1}
                       value={selected.animDelay ?? 0}
-                      onChange={(e) => mutateElement(selected.id, (el) => ({ ...el, animDelay: Number(e.target.value) }))}
+                      onChange={(e) => mutateSelected((el) => ({ ...el, animDelay: Number(e.target.value) }))}
                       className="w-full accent-[#b76e79] mb-4"
                     />
                     <div className="text-xs text-ink-soft mb-1 flex items-center justify-between">
@@ -3307,7 +3537,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                       </span>
                       {selected.animDuration !== undefined && (
                         <button
-                          onClick={() => mutateElement(selected.id, (el) => ({ ...el, animDuration: undefined }))}
+                          onClick={() => mutateSelected((el) => ({ ...el, animDuration: undefined }))}
                           className="underline underline-offset-2 hover:text-accent"
                         >
                           auto
@@ -3320,7 +3550,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                       max={10}
                       step={0.1}
                       value={selected.animDuration ?? (selected.anim === "typewriter" ? 1.5 : 0.65)}
-                      onChange={(e) => mutateElement(selected.id, (el) => ({ ...el, animDuration: Number(e.target.value) }))}
+                      onChange={(e) => mutateSelected((el) => ({ ...el, animDuration: Number(e.target.value) }))}
                       className="w-full accent-[#b76e79]"
                     />
                   </div>
@@ -3556,7 +3786,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                       <div className="flex gap-2">
                         <select
                           value={selected.font}
-                          onChange={(e) => setText(selected.id, { font: e.target.value as TextFont })}
+                          onChange={(e) => handleTextStyle(selected.id, 'font', e.target.value)}
                           className={`${selectCls} flex-1 h-9 py-0`}
                           style={{ fontFamily: FONT_MAP[selected.font] }}
                         >
@@ -3577,14 +3807,14 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                           title="Text color"
                           value={selected.color}
                           suggestions={TEXT_COLORS}
-                          onChange={(c) => setText(selected.id, { color: c })}
+                          onChange={(c) => handleTextStyle(selected.id, 'color', c)}
                           allowGradient
                           size={8}
                         />
                         <span className="w-px h-6 bg-hairline" />
-                        <button onClick={() => setText(selected.id, { bold: !selected.bold })} className={`${tb(!!selected.bold)} w-9 font-bold`}>B</button>
-                        <button onClick={() => setText(selected.id, { italic: !selected.italic })} className={`${tb(!!selected.italic)} w-9 italic`}>I</button>
-                        <button onClick={() => setText(selected.id, { underline: !selected.underline })} className={`${tb(!!selected.underline)} w-9 underline`}>U</button>
+                        <button onPointerDown={(e) => e.preventDefault()} onClick={() => handleTextStyle(selected.id, 'bold', !selected.bold)} className={`${tb(!!selected.bold)} w-9 font-bold`}>B</button>
+                        <button onPointerDown={(e) => e.preventDefault()} onClick={() => handleTextStyle(selected.id, 'italic', !selected.italic)} className={`${tb(!!selected.italic)} w-9 italic`}>I</button>
+                        <button onPointerDown={(e) => e.preventDefault()} onClick={() => handleTextStyle(selected.id, 'underline', !selected.underline)} className={`${tb(!!selected.underline)} w-9 underline`}>U</button>
                         <button onClick={() => setText(selected.id, { uppercase: !selected.uppercase })} className={`${tb(!!selected.uppercase)} w-9 tracking-widest text-[10px]`}>AA</button>
                         <span className="w-px h-6 bg-hairline" />
                         <button onClick={() => setText(selected.id, { align: "left" })} className={`${tb(selected.align === "left")} w-9`}><AlignLeftIcon size={15} /></button>
@@ -3852,10 +4082,19 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                   <button 
                     onClick={() => { 
                       const groupId = nanoid(8);
-                      mutateData((d) => ({
-                        ...d,
-                        elements: d.elements.map(el => selectedIds.includes(el.id) ? { ...el, groupId } : el)
-                      }));
+                      mutateData((d) => {
+                        const selectedEls = d.elements.filter(el => selectedIds.includes(el.id));
+                        const primaryAnimEl = selectedEls.find(el => el.anim && el.anim !== "none") || selectedEls[0];
+                        const animProps = {
+                          anim: primaryAnimEl?.anim,
+                          animDelay: primaryAnimEl?.animDelay,
+                          animDuration: primaryAnimEl?.animDuration
+                        };
+                        return {
+                          ...d,
+                          elements: d.elements.map(el => selectedIds.includes(el.id) ? { ...el, groupId, ...animProps } : el)
+                        };
+                      });
                       setContextMenu(null); 
                     }}
                     className="w-full text-left px-4 py-1.5 hover:bg-accent-soft hover:text-accent flex items-center justify-between"

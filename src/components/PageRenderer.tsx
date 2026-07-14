@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, type CSSProperties } from "react";
+import React, { useRef, useEffect, useState, useMemo, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { motion, type TargetAndTransition } from "framer-motion";
 import {
@@ -22,6 +22,8 @@ import {
 export function isGradient(v: string | undefined): v is string {
   return !!v && /^(linear|radial)-gradient\(/.test(v);
 }
+
+import { PlayIcon, PauseIcon } from "@/components/editor/icons";
 
 export function buildGradient(angle: number, c1: string, c2: string): string {
   return `linear-gradient(${angle}deg, ${c1}, ${c2})`;
@@ -204,9 +206,127 @@ function PhotoBody({ el, animate }: { el: PhotoElement; animate: boolean }) {
   );
 }
 
+function CustomVideoPlayer({
+  src,
+  controls,
+  loop,
+  muted,
+  autoplay,
+  objectPosition,
+  playButtonStyle = "glass",
+}: {
+  src: string;
+  controls?: boolean;
+  loop?: boolean;
+  muted?: boolean;
+  autoplay?: boolean;
+  objectPosition?: string;
+  playButtonStyle?: PlayButtonStyle;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [hover, setHover] = useState(false);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const handlePlay = () => setIsPlaying(true);
+    const handlePause = () => setIsPlaying(false);
+    v.addEventListener("play", handlePlay);
+    v.addEventListener("pause", handlePause);
+    setIsPlaying(!v.paused);
+    return () => {
+      v.removeEventListener("play", handlePlay);
+      v.removeEventListener("pause", handlePause);
+    };
+  }, []);
+
+  const togglePlay = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) v.play();
+    else v.pause();
+  };
+
+  let themeClasses = "";
+  if (playButtonStyle === "glass") {
+    themeClasses = "bg-white/20 backdrop-blur-md border border-white/30 text-white shadow-[0_8px_32px_rgba(0,0,0,0.3)] hover:bg-white/30";
+  } else if (playButtonStyle === "minimal") {
+    themeClasses = "bg-black/40 text-white backdrop-blur-md shadow-lg hover:bg-black/60";
+  } else if (playButtonStyle === "solid") {
+    themeClasses = "bg-white text-black shadow-xl hover:bg-gray-100";
+  } else if (playButtonStyle === "neon") {
+    themeClasses = "bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.9)] hover:shadow-[0_0_30px_rgba(255,255,255,1)]";
+  }
+
+  const baseClasses = "w-20 h-20 flex items-center justify-center rounded-full transition-all duration-300 pointer-events-auto hover:scale-105 active:scale-95";
+  const visibilityClasses = isPlaying && !hover ? "opacity-0 scale-90" : "opacity-100 scale-100";
+
+  return (
+    <div 
+      className="relative w-full h-full"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      <video
+        ref={videoRef}
+        src={src}
+        className="w-full h-full object-cover"
+        controls={false}
+        loop={loop}
+        muted={muted}
+        autoPlay={autoplay}
+        playsInline
+        style={{ objectPosition }}
+      />
+      {controls !== false && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <button
+            onPointerDown={togglePlay}
+            className={`${baseClasses} ${themeClasses} ${visibilityClasses}`}
+            style={{ zIndex: 20 }}
+          >
+            {isPlaying ? <PauseIcon size={36} /> : <PlayIcon size={36} style={{ marginLeft: 4 }} />}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function VideoBody({ el }: { el: VideoElement }) {
   const shadowClass = el.shadow === false ? "" : "photo-shadow";
-  const radius = el.frame === "rounded" ? 20 : 0;
+  const radius = el.frame === "circle" ? "50%" : el.frame === "rounded" ? 20 : 0;
+  
+  const videoEl = (
+    <CustomVideoPlayer
+      src={el.src}
+      controls={el.controls}
+      loop={el.loop}
+      muted={el.muted}
+      autoplay={el.autoplay}
+      objectPosition={`${el.cropX ?? 50}% ${el.cropY ?? 50}%`}
+      playButtonStyle={el.playButtonStyle}
+    />
+  );
+
+  if (el.frame === "polaroid") {
+    return (
+      <div className={`w-full h-full bg-white ${shadowClass} flex flex-col p-[6%] pb-0`}>
+        <div className="flex-1 overflow-hidden bg-black">
+          {videoEl}
+        </div>
+        <div
+          className="h-[18%] min-h-[34px] flex items-center justify-center text-[#5a5248] overflow-hidden"
+          style={{ fontFamily: "var(--font-script), 'Dancing Script', cursive", fontSize: Math.max(20, el.w * 0.075) }}
+        >
+          {el.caption ?? ""}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`w-full h-full ${shadowClass} overflow-hidden bg-black`}
@@ -215,15 +335,7 @@ function VideoBody({ el }: { el: VideoElement }) {
         border: el.borderW ? `${el.borderW}px solid ${el.borderColor ?? "#ffffff"}` : undefined,
       }}
     >
-      <video
-        src={el.src}
-        className="w-full h-full object-cover"
-        controls={el.controls !== false}
-        loop={el.loop}
-        muted={el.muted}
-        autoPlay={el.autoplay}
-        playsInline
-      />
+      {videoEl}
     </div>
   );
 }
@@ -238,29 +350,92 @@ const HIGHLIGHT_RADIUS: Record<string, string> = {
 };
 
 function TextBody({ el, animate = false }: { el: TextElement; animate?: boolean }) {
+  const [isMounted, setIsMounted] = useState(false);
+  const [loopNonce, setLoopNonce] = useState(0);
+  
+  useEffect(() => {
+    setIsMounted(true);
+    
+    // If it's a looping typewriter, force a remount every few seconds
+    if (animate && el.anim === "typewriter-loop") {
+      const container = document.createElement("div");
+      container.innerHTML = el.text;
+      const totalChars = container.textContent?.length || 0;
+      const totalDuration = el.animDuration ?? (totalChars * 0.08);
+      
+      const interval = setInterval(() => {
+        setLoopNonce(n => n + 1);
+      }, (totalDuration + 2) * 1000); // Wait 2s after typing finishes
+      
+      return () => clearInterval(interval);
+    }
+  }, [animate, el.anim, el.text, el.animDuration]);
+
   const gradientText = isGradient(el.color);
-  const isTypewriter = animate && el.anim === "typewriter";
+  const isTypewriter = animate && (el.anim === "typewriter" || el.anim === "typewriter-loop");
   
-  const contentTokens = el.text.split("");
   const baseDelay = 0.45 + (el.animDelay ?? 0);
-  const totalDuration = el.animDuration ?? (contentTokens.length * 0.08);
-  // Cap the speed to a minimum of 0.04s per character (fast) and max of 0.15s (very slow)
-  const step = Math.min(0.15, Math.max(0.04, totalDuration / Math.max(1, contentTokens.length)));
   
-  const renderedText = isTypewriter ? (
-    contentTokens.map((token, i) => (
-      <motion.span
-        key={i}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.01, delay: baseDelay + i * step }}
-      >
-        {token}
-      </motion.span>
-    ))
-  ) : (
-    el.text
-  );
+  const renderedText = useMemo(() => {
+    if (!isTypewriter || !isMounted) {
+      return <span dangerouslySetInnerHTML={{ __html: el.text }} />;
+    }
+    
+    // Typewriter with HTML parsing
+    // We create a temporary DOM element to parse the HTML
+    let container: HTMLDivElement | null = null;
+    if (typeof document !== "undefined") {
+      container = document.createElement("div");
+      container.innerHTML = el.text;
+    }
+    
+    if (!container) return <span dangerouslySetInnerHTML={{ __html: el.text }} />;
+    
+    // Count total characters for animation timing
+    const textContent = container.textContent || "";
+    const totalChars = textContent.length;
+    const totalDuration = el.animDuration ?? (totalChars * 0.08);
+    const step = Math.min(0.15, Math.max(0.04, totalDuration / Math.max(1, totalChars)));
+    
+    let charIndex = 0;
+    
+    function renderNode(node: Node, keyPath: string): React.ReactNode {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent || "";
+        const chars = text.split("");
+        return chars.map((char, i) => {
+          const delay = baseDelay + (charIndex++) * step;
+          return (
+            <motion.span
+              key={`${keyPath}-${i}-${loopNonce}`}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.01, delay }}
+            >
+              {char}
+            </motion.span>
+          );
+        });
+      }
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const element = node as HTMLElement;
+        const tagName = element.tagName.toLowerCase();
+        const style: React.CSSProperties = {};
+        for (let i = 0; i < element.style.length; i++) {
+          const name = element.style[i];
+          const camelCase = name.replace(/-([a-z])/g, g => g[1].toUpperCase());
+          style[camelCase as keyof React.CSSProperties] = element.style[name as any];
+        }
+        
+        const children = Array.from(element.childNodes).map((child, i) => renderNode(child, `${keyPath}-${i}`));
+        
+        return React.createElement(tagName, { key: `${keyPath}-${loopNonce}`, style }, children);
+      }
+      return null;
+    }
+    
+    return Array.from(container.childNodes).map((child, i) => renderNode(child, `root-${i}`));
+  }, [el.text, isTypewriter, baseDelay, el.animDuration, isMounted, loopNonce]);
 
   const content = gradientText ? (
     <span
@@ -276,6 +451,7 @@ function TextBody({ el, animate = false }: { el: TextElement; animate?: boolean 
   ) : (
     renderedText
   );
+  
   return (
     <div
       className="w-full h-full overflow-hidden"
@@ -319,6 +495,24 @@ function TextBody({ el, animate = false }: { el: TextElement; animate?: boolean 
 function ShapeBody({ el }: { el: ShapeElement }) {
   const border = el.borderW ? `${el.borderW}px solid ${el.borderColor ?? "#2b2620"}` : undefined;
   
+  const isVideo = el.srcType === "video";
+  const bgStyle = {
+    backgroundColor: el.src && !isVideo ? undefined : el.fill,
+    backgroundImage: el.src && !isVideo ? `url(${el.src})` : undefined,
+    backgroundPosition: `${el.cropX ?? 50}% ${el.cropY ?? 50}%`
+  };
+  const videoEl = isVideo ? (
+    <CustomVideoPlayer
+      src={el.src!}
+      controls={true}
+      loop={true}
+      muted={true}
+      autoplay={true}
+      objectPosition={bgStyle.backgroundPosition}
+      playButtonStyle={el.playButtonStyle}
+    />
+  ) : null;
+
   const SHAPE_MASKS: Partial<Record<ShapeKind, string>> = {
     heart: HEART_MASK,
     star: STAR_MASK,
@@ -345,32 +539,34 @@ function ShapeBody({ el }: { el: ShapeElement }) {
           <div className="absolute inset-0" style={{ ...maskStyle, background: el.borderColor ?? "#2b2620" }} />
         ) : null}
         <div
-          className="absolute bg-cover"
-          style={{ ...maskStyle, background: el.src ? undefined : el.fill, backgroundImage: el.src ? `url(${el.src})` : undefined, backgroundPosition: `${el.cropX ?? 50}% ${el.cropY ?? 50}%`, inset: el.borderW ?? 0 }}
-        />
+          className="absolute bg-cover overflow-hidden"
+          style={{ ...maskStyle, ...bgStyle, inset: el.borderW ?? 0 }}
+        >
+          {videoEl}
+        </div>
       </div>
     );
   }
   if (el.shape === "circle") {
-    return <div className="w-full h-full bg-cover" style={{ background: el.src ? undefined : el.fill, backgroundImage: el.src ? `url(${el.src})` : undefined, backgroundPosition: `${el.cropX ?? 50}% ${el.cropY ?? 50}%`, borderRadius: "50%", border }} />;
+    return <div className="w-full h-full bg-cover overflow-hidden" style={{ ...bgStyle, borderRadius: "50%", border }}>{videoEl}</div>;
   }
   if (el.shape === "tape") {
     return (
       <div
-        className="w-full h-full bg-cover"
+        className="w-full h-full bg-cover overflow-hidden"
         style={{
-          background: el.src ? undefined : el.fill,
-          backgroundImage: el.src ? `url(${el.src})` : undefined,
-          backgroundPosition: `${el.cropX ?? 50}% ${el.cropY ?? 50}%`,
+          ...bgStyle,
           borderRadius: el.radius ?? 2,
           // Slightly torn short edges, like real washi tape.
           clipPath: "polygon(1.5% 0%, 98.5% 4%, 100% 50%, 98% 96%, 2% 100%, 0% 55%)",
         }}
-      />
+      >
+        {videoEl}
+      </div>
     );
   }
   // rect and line
-  return <div className="w-full h-full bg-cover" style={{ background: el.src ? undefined : el.fill, backgroundImage: el.src ? `url(${el.src})` : undefined, backgroundPosition: `${el.cropX ?? 50}% ${el.cropY ?? 50}%`, borderRadius: el.radius ?? 0, border }} />;
+  return <div className="w-full h-full bg-cover overflow-hidden" style={{ ...bgStyle, borderRadius: el.radius ?? 0, border }}>{videoEl}</div>;
 }
 
 /* ---- Ambient background effects ---- */
@@ -1218,14 +1414,30 @@ export default function PageRenderer({ data, animate = false }: { data: PageData
       {mounted && data.effect && data.effect !== "none" && <EffectLayer effect={data.effect} />}
       {sorted.map((el, i) => {
         let entrance = animate && el.anim && el.anim !== "none" ? ENTRANCES[el.anim] : null;
-        if (el.type === "text" && el.anim === "typewriter") {
+        if (el.type === "text" && (el.anim === "typewriter" || el.anim === "typewriter-loop")) {
           entrance = null; // Handled internally by TextBody word-by-word
         }
+        
+        let groupOrigin: string | undefined;
+        if (el.groupId) {
+          const groupEls = data.elements.filter((e) => e.groupId === el.groupId);
+          if (groupEls.length > 1) {
+            const minX = Math.min(...groupEls.map((e) => e.x));
+            const minY = Math.min(...groupEls.map((e) => e.y));
+            const maxX = Math.max(...groupEls.map((e) => e.x + e.w));
+            const maxY = Math.max(...groupEls.map((e) => e.y + e.h));
+            const groupCenterX = minX + (maxX - minX) / 2;
+            const groupCenterY = minY + (maxY - minY) / 2;
+            groupOrigin = `${groupCenterX - el.x}px ${groupCenterY - el.y}px`;
+          }
+        }
+
         return (
           <div key={el.id} style={elementStyle(el)}>
             {entrance ? (
               <motion.div
                 className="w-full h-full"
+                style={{ transformOrigin: groupOrigin }}
                 initial={entrance.from}
                 animate={entrance.to}
                 transition={{
