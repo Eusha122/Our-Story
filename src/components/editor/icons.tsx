@@ -149,6 +149,49 @@ export function AlignCenterIcon(p: IconProps) {
   );
 }
 
+export function HelpCircleIcon(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </Icon>
+  );
+}
+
+export function ShapeStarIcon(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+    </Icon>
+  );
+}
+
+export function ShapeFlowerIcon(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <path d="M12 7.5a4.5 4.5 0 1 1 4.5 4.5M12 7.5A4.5 4.5 0 1 0 7.5 12M12 7.5V12m0 0a4.5 4.5 0 1 1 4.5 4.5M12 12a4.5 4.5 0 1 0-4.5 4.5M12 12v4.5" />
+      <circle cx="12" cy="12" r="3" />
+    </Icon>
+  );
+}
+
+export function ShapeSparkleIcon(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
+    </Icon>
+  );
+}
+
+export function ShapeCloudIcon(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
+    </Icon>
+  );
+}
+
 export function AlignRightIcon(p: IconProps) {
   return (
     <Icon {...p}>

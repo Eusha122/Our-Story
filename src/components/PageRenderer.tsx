@@ -46,6 +46,18 @@ export function firstSolid(v: string): string {
 const HEART_MASK = `url("data:image/svg+xml;utf8,${encodeURIComponent(
   "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 29'><path d='M23.6,0c-3.4,0-6.3,2.7-7.6,5.6C14.7,2.7,11.8,0,8.4,0C3.8,0,0,3.8,0,8.4c0,9.4,9.5,11.9,16,20.4 c6.1-8.4,16-11.3,16-20.4C32,3.8,28.2,0,23.6,0z'/></svg>"
 )}")`;
+const STAR_MASK = `url("data:image/svg+xml;utf8,${encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><polygon points='12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2'/></svg>"
+)}")`;
+const FLOWER_MASK = `url("data:image/svg+xml;utf8,${encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 7.5a4.5 4.5 0 1 1 4.5 4.5M12 7.5A4.5 4.5 0 1 0 7.5 12M12 7.5V12m0 0a4.5 4.5 0 1 1 4.5 4.5M12 12a4.5 4.5 0 1 0-4.5 4.5M12 12v4.5'/><circle cx='12' cy='12' r='3'/></svg>"
+)}")`;
+const SPARKLE_MASK = `url("data:image/svg+xml;utf8,${encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z'/></svg>"
+)}")`;
+const CLOUD_MASK = `url("data:image/svg+xml;utf8,${encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z'/></svg>"
+)}")`;
 
 export const FILTER_MAP: Record<PhotoFilter, string> = {
   none: "none",
@@ -66,6 +78,10 @@ export const FONT_MAP: Record<TextFont, string> = {
   dancing: "var(--font-dancing), cursive",
   hand: "var(--font-hand), cursive",
   type: "var(--font-type), 'Courier New', monospace",
+  pacifico: "var(--font-pacifico), cursive",
+  montserrat: "var(--font-montserrat), sans-serif",
+  lora: "var(--font-lora), serif",
+  bebas: "var(--font-bebas), sans-serif",
 };
 
 // Entrance animations run on an inner wrapper so they never fight the
@@ -83,6 +99,8 @@ export const ENTRANCES: Record<
   blur: { from: { opacity: 0, filter: "blur(16px)" }, to: { opacity: 1, filter: "blur(0px)" } },
   typewriter: { from: { clipPath: "inset(0 100% 0 0)" }, to: { clipPath: "inset(0 0% 0 0)" }, linear: true },
   "typewriter-loop": { from: { clipPath: "inset(0 100% 0 0)" }, to: { clipPath: "inset(0 0% 0 0)" }, linear: true, loop: "reverse" },
+  "slide-left": { from: { opacity: 0, x: -300 }, to: { opacity: 1, x: 0 }, spring: true },
+  "slide-right": { from: { opacity: 0, x: 300 }, to: { opacity: 1, x: 0 }, spring: true },
 };
 
 export function elementStyle(el: PageElement): CSSProperties {
@@ -99,6 +117,33 @@ export function elementStyle(el: PageElement): CSSProperties {
 }
 
 function PhotoBody({ el, animate }: { el: PhotoElement; animate: boolean }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const isPlaying = useRef(false);
+
+  const handlePhotoClick = () => {
+    if (!animate || !el.audioSrc || !audioRef.current) return;
+    const audio = audioRef.current;
+    if (audio.paused) {
+      if (el.audioStartTime !== undefined) audio.currentTime = el.audioStartTime;
+      audio.play().catch(() => {});
+      isPlaying.current = true;
+    } else {
+      audio.pause();
+      isPlaying.current = false;
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (!audioRef.current || el.audioEndTime === undefined) return;
+    if (audioRef.current.currentTime >= el.audioEndTime && isPlaying.current) {
+      audioRef.current.pause();
+      isPlaying.current = false;
+      if (el.audioStartTime !== undefined) {
+        audioRef.current.currentTime = el.audioStartTime;
+      }
+    }
+  };
+
   const imgStyle: CSSProperties = {
     filter: FILTER_MAP[el.filter ?? "none"],
     transform: el.flip ? "scaleX(-1)" : undefined,
@@ -140,7 +185,21 @@ function PhotoBody({ el, animate }: { el: PhotoElement; animate: boolean }) {
 
   return (
     <ScratchOffOverlay el={el} animate={animate}>
-      {content}
+      <div 
+        className="w-full h-full" 
+        onClick={handlePhotoClick}
+        style={{ cursor: animate && el.audioSrc ? "pointer" : undefined }}
+      >
+        {content}
+        {el.audioSrc && (
+          <audio 
+            ref={audioRef} 
+            src={el.audioSrc} 
+            onTimeUpdate={handleTimeUpdate}
+            preload="auto"
+          />
+        )}
+      </div>
     </ScratchOffOverlay>
   );
 }
@@ -178,8 +237,28 @@ const HIGHLIGHT_RADIUS: Record<string, string> = {
   marker: "0.5em 1.2em 0.6em 1em / 1em 0.5em 1.1em 0.6em",
 };
 
-function TextBody({ el }: { el: TextElement }) {
+function TextBody({ el, animate = false }: { el: TextElement; animate?: boolean }) {
   const gradientText = isGradient(el.color);
+  const isTypewriter = animate && el.anim === "typewriter";
+  
+  const contentTokens = el.text.split(/(\s+)/);
+  const baseDelay = 0.45 + (el.animDelay ?? 0);
+  
+  const renderedText = isTypewriter ? (
+    contentTokens.map((token, i) => (
+      <motion.span
+        key={i}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.1, delay: baseDelay + i * 0.1 }}
+      >
+        {token}
+      </motion.span>
+    ))
+  ) : (
+    el.text
+  );
+
   const content = gradientText ? (
     <span
       style={{
@@ -189,10 +268,10 @@ function TextBody({ el }: { el: TextElement }) {
         color: "transparent",
       }}
     >
-      {el.text}
+      {renderedText}
     </span>
   ) : (
-    el.text
+    renderedText
   );
   return (
     <div
@@ -236,12 +315,22 @@ function TextBody({ el }: { el: TextElement }) {
 
 function ShapeBody({ el }: { el: ShapeElement }) {
   const border = el.borderW ? `${el.borderW}px solid ${el.borderColor ?? "#2b2620"}` : undefined;
-  if (el.shape === "heart") {
+  
+  const SHAPE_MASKS: Partial<Record<ShapeKind, string>> = {
+    heart: HEART_MASK,
+    star: STAR_MASK,
+    flower: FLOWER_MASK,
+    sparkle: SPARKLE_MASK,
+    cloud: CLOUD_MASK,
+  };
+
+  if (el.shape in SHAPE_MASKS) {
+    const mask = SHAPE_MASKS[el.shape as keyof typeof SHAPE_MASKS];
     // CSS mask (not SVG fill) so gradients work here exactly like every
     // other shape; the border is a second, inset copy of the same mask.
     const maskStyle: CSSProperties = {
-      WebkitMaskImage: HEART_MASK,
-      maskImage: HEART_MASK,
+      WebkitMaskImage: mask,
+      maskImage: mask,
       WebkitMaskSize: "100% 100%",
       maskSize: "100% 100%",
       WebkitMaskRepeat: "no-repeat",
@@ -559,17 +648,66 @@ function ScratchOffOverlay({ el, children, animate }: { el: PhotoElement; childr
   );
 }
 
-function AudioBody({ el }: { el: AudioElement }) {
+function AudioBody({ el, animate }: { el: AudioElement; animate: boolean }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const isPlaying = useRef(false);
+
+  useEffect(() => {
+    if (audioRef.current && el.startTime !== undefined) {
+      audioRef.current.currentTime = el.startTime;
+    }
+  }, [el.startTime]);
+
+  const handleTimeUpdate = () => {
+    if (!audioRef.current || el.endTime === undefined) return;
+    if (audioRef.current.currentTime >= el.endTime && isPlaying.current) {
+      audioRef.current.pause();
+      isPlaying.current = false;
+      if (el.startTime !== undefined) {
+        audioRef.current.currentTime = el.startTime;
+      }
+    }
+  };
+
+  const handlePlay = () => {
+    isPlaying.current = true;
+    if (audioRef.current && el.endTime !== undefined && audioRef.current.currentTime >= el.endTime) {
+       audioRef.current.currentTime = el.startTime ?? 0;
+    }
+  };
+
+  const handlePause = () => {
+    isPlaying.current = false;
+  };
+
+  if (el.invisible && animate) {
+    return (
+      <audio 
+        ref={audioRef}
+        src={el.src} 
+        autoPlay={el.autoplay} 
+        loop={el.loop} 
+        style={{ display: 'none' }}
+        onTimeUpdate={handleTimeUpdate}
+        onPlay={handlePlay}
+        onPause={handlePause}
+      />
+    );
+  }
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center bg-white/80 backdrop-blur-md rounded-2xl shadow-xl border border-hairline relative">
+    <div className={`w-full h-full flex flex-col items-center justify-center bg-white/80 backdrop-blur-md rounded-2xl shadow-xl border border-hairline relative ${el.invisible ? 'opacity-50' : ''}`}>
       <div className="text-3xl mb-2">🎵</div>
       <audio
+        ref={audioRef}
         controls
         src={el.src}
         autoPlay={el.autoplay}
         loop={el.loop}
         className="w-[90%] h-10"
         style={{ pointerEvents: "auto" }}
+        onTimeUpdate={handleTimeUpdate}
+        onPlay={handlePlay}
+        onPause={handlePause}
       />
     </div>
   );
@@ -1036,10 +1174,10 @@ function MapBody({ el }: { el: MapElement }) {
 
 export function ElementBody({ el, animate }: { el: PageElement; animate: boolean }) {
   if (el.type === "photo") return <PhotoBody el={el} animate={animate} />;
-  if (el.type === "text") return <TextBody el={el} />;
+  if (el.type === "text") return <TextBody el={el} animate={animate} />;
   if (el.type === "shape") return <ShapeBody el={el} />;
   if (el.type === "video") return <VideoBody el={el} />;
-  if (el.type === "audio") return <AudioBody el={el} />;
+  if (el.type === "audio") return <AudioBody el={el} animate={animate} />;
   if (el.type === "envelope") return <EnvelopeBody el={el} animate={animate} />;
   if (el.type === "map") return <MapBody el={el} />;
   return (
@@ -1076,7 +1214,10 @@ export default function PageRenderer({ data, animate = false }: { data: PageData
     >
       {mounted && data.effect && data.effect !== "none" && <EffectLayer effect={data.effect} />}
       {sorted.map((el, i) => {
-        const entrance = animate && el.anim && el.anim !== "none" ? ENTRANCES[el.anim] : null;
+        let entrance = animate && el.anim && el.anim !== "none" ? ENTRANCES[el.anim] : null;
+        if (el.type === "text" && el.anim === "typewriter") {
+          entrance = null; // Handled internally by TextBody word-by-word
+        }
         return (
           <div key={el.id} style={elementStyle(el)}>
             {entrance ? (

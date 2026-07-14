@@ -45,6 +45,10 @@ import {
   ShapeRectIcon,
   ShapeCircleIcon,
   ShapeHeartIcon,
+  ShapeStarIcon,
+  ShapeFlowerIcon,
+  ShapeSparkleIcon,
+  ShapeCloudIcon,
   ShapeLineIcon,
   ShapeTapeIcon,
   SmileIcon,
@@ -82,10 +86,11 @@ interface MediaMeta {
 type SaveState = "saved" | "dirty" | "saving" | "error";
 
 const STICKERS = [
-  "❤️", "💕", "💌", "💐", "🌹", "🌸", "🌷", "🎀",
-  "✨", "💫", "⭐", "🌙", "🌈", "☁️", "🦋", "🍓",
-  "🥰", "😘", "🫶", "🤍", "🧸", "🎈", "🍦", "🍰",
-  "📷", "🎵", "✈️", "🕯️", "🐚", "🪞", "🖇️", "🗝️",
+  "❤️", "💕", "💌", "💐", "🌹", "🌸", "🌷", "🌺", "🌻", "🌼", "🎀",
+  "✨", "💫", "⭐", "🌟", "🌙", "☀️", "🌈", "☁️", "❄️", "🦋", "🍓", "🍒", "🍑",
+  "🥰", "😘", "🥺", "🫶", "🤍", "💖", "🧸", "🎈", "🎉", "🎨", "🍦", "🍰", "🍩",
+  "📷", "🎵", "🎶", "🎧", "✈️", "🚗", "🕯️", "🐚", "🪞", "🖇️", "🗝️", "💍", "👑",
+  "☕", "🍵", "🍷", "🥂", "🍕", "🍔", "🪴", "🌿", "🍀", "🍄", "🍁", "🍂", "🐶", "🐱",
 ];
 
 const TEXT_COLORS = [
@@ -113,6 +118,10 @@ const SHAPE_DEFAULTS: Record<ShapeKind, { w: number; h: number; fill: string; ra
   rect: { w: 420, h: 280, fill: "#f5e9ea", radius: 0 },
   circle: { w: 320, h: 320, fill: "#f5e9ea" },
   heart: { w: 220, h: 200, fill: "#b76e79" },
+  star: { w: 240, h: 240, fill: "#e8a0a8" },
+  flower: { w: 220, h: 220, fill: "#f5b3b8" },
+  sparkle: { w: 180, h: 180, fill: "#e8a0a8" },
+  cloud: { w: 320, h: 200, fill: "#dfe8f2" },
   line: { w: 520, h: 6, fill: "#2b2620" },
   tape: { w: 280, h: 74, fill: "#d6b18a", opacity: 0.55, rotation: -5, radius: 2 },
 };
@@ -121,6 +130,10 @@ const SHAPE_ICONS: Record<ShapeKind, (p: { size?: number }) => React.ReactElemen
   rect: ShapeRectIcon,
   circle: ShapeCircleIcon,
   heart: ShapeHeartIcon,
+  star: ShapeStarIcon,
+  flower: ShapeFlowerIcon,
+  sparkle: ShapeSparkleIcon,
+  cloud: ShapeCloudIcon,
   line: ShapeLineIcon,
   tape: ShapeTapeIcon,
 };
@@ -615,7 +628,12 @@ function timeLabel(sqliteUtc: string) {
 export default function Editor({ initialPages }: { initialPages: Page[] }) {
   const [pages, setPages] = useState<Page[]>(initialPages);
   const [currentId, setCurrentId] = useState<string | null>(initialPages[0]?.id ?? null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
+  const setSelectedId = useCallback((id: string | null) => {
+    setSelectedIds(id ? [id] : []);
+  }, []);
+  const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -655,6 +673,15 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
   const [fabOpen, setFabOpen] = useState(false);
   const [mobileStickerOpen, setMobileStickerOpen] = useState(false);
 
+  useEffect(() => {
+    fetch("/api/pages")
+      .then((r) => r.json())
+      .then((data) => {
+        setPages(data);
+      })
+      .catch(() => {});
+  }, []);
+
   const refreshStorage = useCallback(() => {
     fetch("/api/storage")
       .then((r) => (r.ok ? r.json() : null))
@@ -668,6 +695,62 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
 
   const page = pages.find((p) => p.id === currentId) ?? null;
   const selected = page?.data.elements.find((el) => el.id === selectedId) ?? null;
+
+  /* ---------------- history & undo ---------------- */
+  const historyRef = useRef<Page[][]>([initialPages]);
+  const historyIndexRef = useRef<number>(0);
+  const isUndoRedoRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    if (isUndoRedoRef.current) {
+      isUndoRedoRef.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      const currentHistory = historyRef.current;
+      const currentIndex = historyIndexRef.current;
+      const lastSaved = currentHistory[currentIndex];
+      
+      if (JSON.stringify(lastSaved) !== JSON.stringify(pages)) {
+        const newHistory = currentHistory.slice(0, currentIndex + 1);
+        newHistory.push(pages);
+        if (newHistory.length > 50) newHistory.shift();
+        historyRef.current = newHistory;
+        historyIndexRef.current = newHistory.length - 1;
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [pages]);
+
+  const undo = useCallback(() => {
+    if (historyIndexRef.current > 0) {
+      historyIndexRef.current -= 1;
+      const restored = historyRef.current[historyIndexRef.current];
+      isUndoRedoRef.current = true;
+      setPages(restored);
+      
+      const p = restored.find(p => p.id === currentId);
+      if (p) {
+        pendingRef.current = p;
+        setSaveState("dirty");
+      }
+    }
+  }, [currentId]);
+
+  const redo = useCallback(() => {
+    if (historyIndexRef.current < historyRef.current.length - 1) {
+      historyIndexRef.current += 1;
+      const restored = historyRef.current[historyIndexRef.current];
+      isUndoRedoRef.current = true;
+      setPages(restored);
+      
+      const p = restored.find(p => p.id === currentId);
+      if (p) {
+        pendingRef.current = p;
+        setSaveState("dirty");
+      }
+    }
+  }, [currentId]);
 
   /* ---------------- canvas scaling ---------------- */
   const stageRef = useRef<HTMLDivElement>(null);
@@ -965,24 +1048,6 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
     setSelectedId(el.id);
   }, [page, nextZ, mutateData]);
 
-  const addAudio = useCallback((src: string) => {
-    if (!page) return;
-    const el: PageElement = {
-      id: nanoid(8),
-      type: "audio",
-      x: PAGE_W / 2 - 150,
-      y: PAGE_H / 2 - 50,
-      w: 300,
-      h: 100,
-      rotation: 0,
-      z: nextZ(),
-      src,
-      autoplay: true,
-      loop: false,
-    };
-    mutateData((d) => ({ ...d, elements: [...d.elements, el] }));
-    setSelectedId(el.id);
-  }, [page, nextZ, mutateData]);
 
   const addSticker = useCallback(
     (emoji: string) => {
@@ -1030,6 +1095,7 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
 
   const fileInput = useRef<HTMLInputElement>(null);
   const videoInput = useRef<HTMLInputElement>(null);
+  const audioInput = useRef<HTMLInputElement>(null);
 
   const addVideos = useCallback(
     async (files: FileList) => {
@@ -1123,51 +1189,264 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
     [page, nextZ, mutateData, refreshStorage]
   );
 
+  const addAudio = useCallback(
+    async (files: FileList) => {
+      if (!page) return;
+      setUploading(true);
+      try {
+        let offset = 0;
+        for (const file of Array.from(files)) {
+          const fd = new FormData();
+          fd.append("file", file);
+          const res = await fetch("/api/images", { method: "POST", body: fd });
+          if (!res.ok) {
+            const body = (await res.json().catch(() => null)) as { error?: string } | null;
+            alert(body?.error ?? "Upload failed");
+            continue;
+          }
+          const { url } = (await res.json()) as { url: string };
+          const el: PageElement = {
+            id: nanoid(8),
+            type: "audio",
+            x: PAGE_W / 2 - 150 + offset,
+            y: PAGE_H / 2 - 50 + offset,
+            w: 300,
+            h: 100,
+            rotation: 0,
+            z: nextZ() + offset / 30,
+            src: url,
+            autoplay: true,
+            loop: false,
+            invisible: false,
+          };
+          mutateData((d) => ({ ...d, elements: [...d.elements, el] }));
+          setSelectedId(el.id);
+          offset += 30;
+        }
+      } finally {
+        setUploading(false);
+        refreshStorage();
+      }
+    },
+    [page, nextZ, mutateData, refreshStorage]
+  );
+
   /* ---------------- element actions ---------------- */
 
   const removeSelected = useCallback(() => {
-    if (!selectedId || !page) return;
-    // If the element owns a media file, delete it from the server.
-    const el = page.data.elements.find((e) => e.id === selectedId);
-    if (el && (el.type === "photo" || el.type === "video") && el.src) {
-      const mediaId = el.src.split("/").pop();
-      if (mediaId) {
-        fetch(`/api/images/${mediaId}`, { method: "DELETE" })
-          .then(() => refreshStorage())
-          .catch(() => {});
+    if (selectedIds.length === 0 || !page) return;
+    
+    // Delete media for all selected elements that have media
+    selectedIds.forEach((id) => {
+      const el = page.data.elements.find((e) => e.id === id);
+      if (el && (el.type === "photo" || el.type === "video" || el.type === "audio") && el.src) {
+        const mediaId = el.src.split("/").pop();
+        if (mediaId) {
+          fetch(`/api/images/${mediaId}`, { method: "DELETE" })
+            .then(() => refreshStorage())
+            .catch(() => {});
+        }
       }
-    }
-    mutateData((d) => ({ ...d, elements: d.elements.filter((e) => e.id !== selectedId) }));
-    setSelectedId(null);
-  }, [selectedId, page, mutateData, refreshStorage]);
+    });
 
+    mutateData((d) => ({ ...d, elements: d.elements.filter((e) => !selectedIds.includes(e.id)) }));
+    setSelectedIds([]);
+  }, [selectedIds, page, mutateData, refreshStorage, setSelectedIds]);
+
+  const alignSelected = useCallback((alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom' | 'level' | 'distribute-h' | 'distribute-v' | 'center-page-h' | 'center-page-v') => {
+    if (selectedIds.length === 0 || !page) return;
+    if (selectedIds.length < 2 && !alignment.startsWith('center-page')) return;
+    
+    const elements = page.data.elements.filter(e => selectedIds.includes(e.id));
+    
+    let targetX = 0;
+    let targetY = 0;
+    
+    const targetXs = new Map<string, number>();
+    const targetYs = new Map<string, number>();
+    
+    if (alignment === 'left') targetX = Math.min(...elements.map(e => e.x));
+    else if (alignment === 'right') targetX = Math.max(...elements.map(e => e.x + e.w));
+    else if (alignment === 'center') {
+      const minX = Math.min(...elements.map(e => e.x));
+      const maxX = Math.max(...elements.map(e => e.x + e.w));
+      targetX = (minX + maxX) / 2;
+    }
+    else if (alignment === 'top') targetY = Math.min(...elements.map(e => e.y));
+    else if (alignment === 'bottom') targetY = Math.max(...elements.map(e => e.y + e.h));
+    else if (alignment === 'middle') {
+      const minY = Math.min(...elements.map(e => e.y));
+      const maxY = Math.max(...elements.map(e => e.y + e.h));
+      targetY = (minY + maxY) / 2;
+    }
+    else if (alignment === 'distribute-h' && elements.length > 2) {
+      const sorted = [...elements].sort((a, b) => a.x - b.x);
+      const minX = sorted[0].x;
+      const last = sorted[sorted.length - 1];
+      const maxX = last.x + last.w;
+      const sumWidths = sorted.reduce((sum, el) => sum + el.w, 0);
+      const gap = (maxX - minX - sumWidths) / (sorted.length - 1);
+      
+      let currX = minX;
+      sorted.forEach(el => {
+        targetXs.set(el.id, currX);
+        currX += el.w + gap;
+      });
+    }
+    else if (alignment === 'distribute-v' && elements.length > 2) {
+      const sorted = [...elements].sort((a, b) => a.y - b.y);
+      const minY = sorted[0].y;
+      const last = sorted[sorted.length - 1];
+      const maxY = last.y + last.h;
+      const sumHeights = sorted.reduce((sum, el) => sum + el.h, 0);
+      const gap = (maxY - minY - sumHeights) / (sorted.length - 1);
+      
+      let currY = minY;
+      sorted.forEach(el => {
+        targetYs.set(el.id, currY);
+        currY += el.h + gap;
+      });
+    }
+
+    mutateData((d) => {
+      const nextElements = d.elements.map(e => {
+        if (!selectedIds.includes(e.id)) return e;
+        let newX = e.x;
+        let newY = e.y;
+        let newRot = e.rotation;
+        
+        if (alignment === 'left') newX = targetX;
+        else if (alignment === 'right') newX = targetX - e.w;
+        else if (alignment === 'center') newX = targetX - e.w / 2;
+        else if (alignment === 'top') newY = targetY;
+        else if (alignment === 'bottom') newY = targetY - e.h;
+        else if (alignment === 'middle') newY = targetY - e.h / 2;
+        else if (alignment === 'level') newRot = 0;
+        else if (alignment === 'distribute-h' && targetXs.has(e.id)) newX = targetXs.get(e.id)!;
+        else if (alignment === 'distribute-v' && targetYs.has(e.id)) newY = targetYs.get(e.id)!;
+        else if (alignment === 'center-page-h') newX = PAGE_W / 2 - e.w / 2;
+        else if (alignment === 'center-page-v') newY = PAGE_H / 2 - e.h / 2;
+        
+        return { ...e, x: newX, y: newY, rotation: newRot };
+      });
+      return { ...d, elements: nextElements };
+    });
+  }, [selectedIds, page, mutateData]);
 
   const duplicateSelected = useCallback(() => {
-    if (!selected) return;
-    const copy: PageElement = { ...selected, id: nanoid(8), x: selected.x + 36, y: selected.y + 36, z: nextZ() };
-    mutateData((d) => ({ ...d, elements: [...d.elements, copy] }));
-    setSelectedId(copy.id);
-  }, [selected, nextZ, mutateData]);
+    if (selectedIds.length === 0 || !page) return;
+    const copies: PageElement[] = [];
+    selectedIds.forEach(id => {
+      const el = page.data.elements.find(e => e.id === id);
+      if (el) {
+        copies.push({ ...el, id: nanoid(8), x: el.x + 36, y: el.y + 36, z: nextZ() });
+      }
+    });
+    mutateData((d) => ({ ...d, elements: [...d.elements, ...copies] }));
+    setSelectedIds(copies.map(c => c.id));
+  }, [selectedIds, page, nextZ, mutateData, setSelectedIds]);
 
   const reorderZ = useCallback(
     (dir: 1 | -1) => {
-      if (!selected || !page) return;
+      if (selectedIds.length === 0 || !page) return;
       const zs = page.data.elements.map((e) => e.z);
       const target = dir === 1 ? Math.max(...zs) + 1 : Math.min(...zs) - 1;
-      mutateElement(selected.id, (el) => ({ ...el, z: target }));
+      
+      mutateData((d) => {
+        let nextElements = [...d.elements];
+        selectedIds.forEach(id => {
+          nextElements = nextElements.map(e => e.id === id ? { ...e, z: target } : e);
+        });
+        return { ...d, elements: nextElements };
+      });
     },
-    [selected, page, mutateElement]
+    [selectedIds, page, mutateData]
   );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable) return;
-      if (!selectedId) return;
+      
+      // Select All (Ctrl+A)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        e.preventDefault();
+        if (page) setSelectedIds(page.data.elements.map(el => el.id));
+        return;
+      }
+      
+      // Undo (Ctrl+Z) and Redo (Ctrl+Y or Ctrl+Shift+Z)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        e.preventDefault();
+        redo();
+        return;
+      }
+      
+      // Grouping (Ctrl+G / Ctrl+Shift+G)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'g') {
+        e.preventDefault();
+        if (selectedIds.length === 0 || !page) return;
+        
+        if (e.shiftKey) {
+          // Ungroup
+          mutateData((d) => {
+            const nextElements = d.elements.map(el => selectedIds.includes(el.id) ? { ...el, groupId: undefined } : el);
+            return { ...d, elements: nextElements };
+          });
+        } else if (selectedIds.length > 1) {
+          // Group
+          const groupId = nanoid(8);
+          mutateData((d) => {
+            const nextElements = d.elements.map(el => selectedIds.includes(el.id) ? { ...el, groupId } : el);
+            return { ...d, elements: nextElements };
+          });
+        }
+        return;
+      }
+      
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        if (selectedIds.length > 0 && page) {
+          const sel = page.data.elements.filter(el => selectedIds.includes(el.id));
+          if (sel.length > 0) {
+            localStorage.setItem('ourstory_clipboard', JSON.stringify(sel));
+          }
+        }
+        return;
+      }
+      
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        const item = localStorage.getItem('ourstory_clipboard');
+        if (item && page) {
+          try {
+            const parsed = JSON.parse(item);
+            const elsToCopy = Array.isArray(parsed) ? parsed : [parsed];
+            const copies: PageElement[] = elsToCopy.map((el: PageElement) => ({
+              ...el, id: nanoid(8), x: el.x + 36, y: el.y + 36, z: nextZ() 
+            }));
+            mutateData((d) => ({ ...d, elements: [...d.elements, ...copies] }));
+            setSelectedIds(copies.map(c => c.id));
+          } catch (err) {}
+        }
+        return;
+      }
+
+      if (selectedIds.length === 0) return;
+      
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
         removeSelected();
+        return;
       }
+      
       const step = e.shiftKey ? 12 : 2;
       const nudge: Record<string, [number, number]> = {
         ArrowLeft: [-step, 0],
@@ -1178,12 +1457,15 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
       if (nudge[e.key]) {
         e.preventDefault();
         const [dx, dy] = nudge[e.key];
-        mutateElement(selectedId, (el) => ({ ...el, x: el.x + dx, y: el.y + dy }));
+        mutateData((d) => {
+          const nextElements = d.elements.map(el => selectedIds.includes(el.id) ? { ...el, x: el.x + dx, y: el.y + dy } : el);
+          return { ...d, elements: nextElements };
+        });
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, removeSelected, mutateElement]);
+  }, [selectedIds, page, removeSelected, mutateData, nextZ, setSelectedIds, undo, redo]);
 
   /* ---------------- page list actions ---------------- */
 
@@ -1260,52 +1542,126 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
 
   /* ---------------- canvas interaction ---------------- */
 
+  const startMarquee = useCallback((e: React.PointerEvent) => {
+    if (e.target !== e.currentTarget || !page) return;
+    
+    const initialSelected = (e.shiftKey || e.ctrlKey || e.metaKey) ? [...selectedIds] : [];
+    if (initialSelected.length === 0) setSelectedIds([]);
+    setEditingTextId(null);
+    
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const s = scaleRef.current;
+    const startX = (e.clientX - rect.left) / s;
+    const startY = (e.clientY - rect.top) / s;
+    
+    trackPointer(e, (dx, dy) => {
+      const currentX = startX + dx / s;
+      const currentY = startY + dy / s;
+      
+      const x = Math.min(startX, currentX);
+      const y = Math.min(startY, currentY);
+      const w = Math.abs(currentX - startX);
+      const h = Math.abs(currentY - startY);
+      
+      setMarquee({ x, y, w, h });
+      
+      const hitIds = page.data.elements.filter(el => {
+        return (
+          el.x < x + w &&
+          el.x + el.w > x &&
+          el.y < y + h &&
+          el.y + el.h > y
+        );
+      }).map(el => el.id);
+      
+      setSelectedIds([...new Set([...initialSelected, ...hitIds])]);
+      
+    }, () => {
+      setMarquee(null);
+    });
+  }, [page, selectedIds, setSelectedIds]);
+
   const startMove = useCallback(
     (e: React.PointerEvent, el: PageElement) => {
-      setSelectedId(el.id);
+      // Grouping selection logic: if clicking an element in a group, select the whole group
+      let clickedIds = [el.id];
+      if (el.groupId && page) {
+        clickedIds = page.data.elements.filter(e => e.groupId === el.groupId).map(e => e.id);
+      }
+
+      let idsToMove = selectedIds.some(id => clickedIds.includes(id)) ? selectedIds : clickedIds;
+      if (e.shiftKey || e.ctrlKey || e.metaKey) {
+        if (!selectedIds.some(id => clickedIds.includes(id))) {
+          idsToMove = [...selectedIds, ...clickedIds];
+        } else {
+          // Toggle off
+          idsToMove = selectedIds.filter(id => !clickedIds.includes(id));
+        }
+      }
+      setSelectedIds(idsToMove);
+
       if (editingTextId === el.id) return;
-      const { x, y } = el;
+      
+      const originalPositions = new Map<string, { x: number, y: number }>();
+      page?.data.elements.forEach(e => {
+        if (idsToMove.includes(e.id)) originalPositions.set(e.id, { x: e.x, y: e.y });
+      });
+
       trackPointer(
         e,
         (dx, dy) => {
           const s = scaleRef.current;
-          mutateElement(el.id, (cur) => ({ ...cur, x: x + dx / s, y: y + dy / s }));
+          mutateData((d) => {
+            const nextElements = d.elements.map(e => {
+              if (idsToMove.includes(e.id)) {
+                const orig = originalPositions.get(e.id);
+                if (orig) return { ...e, x: orig.x + dx / s, y: orig.y + dy / s };
+              }
+              return e;
+            });
+            return { ...d, elements: nextElements };
+          });
         },
         (ev) => {
-          const draggedNode = document.getElementById(`el-${el.id}`);
-          if (draggedNode) draggedNode.style.pointerEvents = "none";
+          idsToMove.forEach(id => {
+            const node = document.getElementById(`el-${id}`);
+            if (node) node.style.pointerEvents = "none";
+          });
           
           const targetNode = document.elementFromPoint(ev.clientX, ev.clientY);
           
-          if (draggedNode) draggedNode.style.pointerEvents = "auto";
+          idsToMove.forEach(id => {
+            const node = document.getElementById(`el-${id}`);
+            if (node) node.style.pointerEvents = "auto";
+          });
 
-          // Check if we dropped it over a page thumbnail
+          // Check if we dropped over a page thumbnail
           const pageNode = targetNode?.closest("[data-page-id]");
           if (pageNode) {
             const targetPageId = pageNode.getAttribute("data-page-id");
             if (targetPageId && targetPageId !== currentId) {
               setPages(prev => prev.map(p => {
-                if (p.id === targetPageId) {
+                if (p.id === targetPageId && page) {
                   const maxZ = p.data.elements.length > 0 ? Math.max(...p.data.elements.map(e => e.z)) : 0;
-                  return { ...p, data: { ...p.data, elements: [...p.data.elements, { ...el, z: maxZ + 1 }] } };
+                  const elsToMove = page.data.elements.filter(e => idsToMove.includes(e.id)).map((e, i) => ({ ...e, z: maxZ + 1 + i }));
+                  return { ...p, data: { ...p.data, elements: [...p.data.elements, ...elsToMove] } };
                 }
                 if (p.id === currentId) {
-                  return { ...p, data: { ...p.data, elements: p.data.elements.filter(e => e.id !== el.id) } };
+                  return { ...p, data: { ...p.data, elements: p.data.elements.filter(e => !idsToMove.includes(e.id)) } };
                 }
                 return p;
               }));
-              setSelectedId(null);
+              setSelectedIds([]);
               return;
             }
           }
 
-          // If the element is a photo, check if we dropped it over a shape!
-          if (el.type === "photo" && el.src) {
+          // If a SINGLE photo is dropped onto a shape, replace the shape's image
+          if (idsToMove.length === 1 && el.type === "photo" && el.src) {
             const shapeNode = targetNode?.closest("[data-shape-id]");
             if (shapeNode) {
               const shapeId = shapeNode.getAttribute("data-shape-id");
               if (shapeId && shapeId !== el.id) {
-                // Drop successful! Move src to shape and delete photo.
                 const photoSrc = el.src;
                 mutateData((d) => {
                   let nextElements = d.elements.map(e => 
@@ -1314,14 +1670,14 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                   nextElements = nextElements.filter(e => e.id !== el.id);
                   return { ...d, elements: nextElements };
                 });
-                setSelectedId(shapeId);
+                setSelectedIds([shapeId]);
               }
             }
           }
         }
       );
     },
-    [editingTextId, mutateElement, currentId, setPages, mutateData]
+    [editingTextId, currentId, setPages, mutateData, selectedIds, page, setSelectedIds]
   );
 
   const startAdjust = useCallback(
@@ -1343,11 +1699,23 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
     e.preventDefault();
     e.stopPropagation();
     setContextMenu({ x: e.clientX, y: e.clientY, elId });
-    if (elId) setSelectedId(elId);
-  }, []);
+    if (elId) {
+      setSelectedIds(prev => prev.includes(elId) ? prev : [elId]);
+    } else {
+      setSelectedIds([]);
+    }
+  }, [setSelectedIds]);
 
   const startResize = useCallback(
     (e: React.PointerEvent, el: PageElement, dir: "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se") => {
+      const isMulti = selectedIds.includes(el.id) && selectedIds.length > 1;
+      const idsToResize = isMulti ? selectedIds : [el.id];
+      
+      const originals = new Map<string, PageElement>();
+      page?.data.elements.forEach(e => {
+        if (idsToResize.includes(e.id)) originals.set(e.id, e);
+      });
+
       const { x, y, w, h } = el;
       trackPointer(e, (dxRaw, dyRaw) => {
         const s = scaleRef.current;
@@ -1376,10 +1744,32 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
         }
 
         if (nw < 40 || nh < 40) return;
-        mutateElement(el.id, (cur) => ({ ...cur, x: nx, y: ny, w: nw, h: nh, cropX, cropY }));
+
+        const scaleX = nw / w;
+        const scaleY = nh / h;
+
+        mutateData(d => {
+          const nextElements = d.elements.map(curr => {
+            if (!idsToResize.includes(curr.id)) return curr;
+            const orig = originals.get(curr.id);
+            if (!orig) return curr;
+            
+            if (curr.id === el.id) {
+              return { ...curr, x: nx, y: ny, w: nw, h: nh, cropX, cropY };
+            }
+            
+            const newW = orig.w * scaleX;
+            const newH = orig.h * scaleY;
+            const newX = nx + (orig.x - el.x) * scaleX;
+            const newY = ny + (orig.y - el.y) * scaleY;
+            
+            return { ...curr, x: newX, y: newY, w: Math.max(10, newW), h: Math.max(10, newH) };
+          });
+          return { ...d, elements: nextElements };
+        });
       });
     },
-    [mutateElement]
+    [mutateData, selectedIds, page]
   );
 
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -1482,6 +1872,9 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
             </button>
             <button onClick={() => videoInput.current?.click()} className={`${tb(false)} gap-1.5 px-3`}>
               <VideoIcon size={17} /> Video
+            </button>
+            <button onClick={() => audioInput.current?.click()} className={`${tb(false)} gap-1.5 px-3`}>
+              <PlayIcon size={17} /> Audio
             </button>
             <button onClick={addText} className={`${tb(false)} gap-1.5 px-3`}>
               <TypeIcon size={17} /> Text
@@ -1695,6 +2088,17 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
           e.target.value = "";
         }}
       />
+      <input
+        ref={audioInput}
+        type="file"
+        accept="audio/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files?.length) void addAudio(e.target.files);
+          e.target.value = "";
+        }}
+      />
 
       <div 
         className="flex-1 flex flex-col md:flex-row min-h-0"
@@ -1898,23 +2302,110 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
               }}
             >
               <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
-                <div
-                  ref={canvasRef}
-                  className="relative overflow-hidden shadow-[0_16px_50px_rgba(43,38,32,0.14)]"
-                  style={{ width: PAGE_W, height: PAGE_H, background: page.data.background }}
-                  onPointerDown={() => {
-                    setSelectedId(null);
-                    setEditingTextId(null);
-                  }}
-                >
+                  <div
+                    ref={canvasRef}
+                    className="relative shadow-[0_16px_50px_rgba(43,38,32,0.14)]"
+                    style={{ width: PAGE_W, height: PAGE_H, background: page.data.background }}
+                    onPointerDown={startMarquee}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "copy";
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (!page) return;
+                      const s = scaleRef.current;
+                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      const x = (e.clientX - rect.left) / s;
+                      const y = (e.clientY - rect.top) / s;
+
+                      // 1. Internal media library drop
+                      const mediaData = e.dataTransfer.getData("application/vnd.ourstory.media");
+                      if (mediaData) {
+                        try {
+                          const m = JSON.parse(mediaData) as MediaMeta;
+                          const elId = nanoid(8);
+                          const z = nextZ();
+                          if (m.kind === "image") {
+                            const img = new Image();
+                            img.onload = () => {
+                              const ratio = img.naturalHeight / img.naturalWidth;
+                              const w = 460;
+                              const h = clamp(w * ratio, 200, 860) + 90;
+                              mutateData((d) => ({
+                                ...d,
+                                elements: [
+                                  ...d.elements,
+                                  {
+                                    id: elId, type: "photo", x: x - w / 2, y: y - h / 2,
+                                    w, h, rotation: 0, z, src: `/api/images/${m.id}`, filter: "none", frame: "polaroid", caption: ""
+                                  }
+                                ]
+                              }));
+                            };
+                            img.src = `/api/images/${m.id}`;
+                          } else if (m.kind === "video") {
+                            const w = 460;
+                            const h = 460;
+                            mutateData((d) => ({
+                              ...d,
+                              elements: [
+                                ...d.elements,
+                                {
+                                  id: elId, type: "video", x: x - w / 2, y: y - h / 2,
+                                  w, h, rotation: 0, z, src: `/api/images/${m.id}`, frame: "plain", controls: true
+                                }
+                              ]
+                            }));
+                          } else if (m.kind === "audio") {
+                            mutateData((d) => ({
+                              ...d,
+                              elements: [
+                                ...d.elements,
+                                {
+                                  id: elId, type: "audio", x: x - 150, y: y - 50,
+                                  w: 300, h: 100, rotation: 0, z, src: `/api/images/${m.id}`, autoplay: true, loop: false
+                                }
+                              ]
+                            }));
+                          }
+                          setSelectedIds([elId]);
+                        } catch (err) {}
+                        return;
+                      }
+
+                      // 2. External OS file drop
+                      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                        const files = e.dataTransfer.files;
+                        const type = files[0].type;
+                        if (type.startsWith("image/")) addPhotos(files);
+                        else if (type.startsWith("video/")) addVideos(files);
+                        else if (type.startsWith("audio/")) addAudio(files);
+                      }
+                    }}
+                  >
                   {/* Static base only — the live PageRenderer handles effects */}
                   <div className="absolute inset-0 pointer-events-none">
                     <PageRenderer data={{ ...page.data, elements: [] }} />
                   </div>
+                  
+                  {/* Marquee Selection Box */}
+                  {marquee && (
+                    <div
+                      className="absolute bg-accent/20 border border-accent pointer-events-none z-50 rounded-sm"
+                      style={{
+                        left: marquee.x,
+                        top: marquee.y,
+                        width: marquee.w,
+                        height: marquee.h,
+                      }}
+                    />
+                  )}
+
                   {[...page.data.elements]
                     .sort((a, b) => a.z - b.z)
                     .map((el) => {
-                      const isSelected = el.id === selectedId;
+                      const isSelected = selectedIds.includes(el.id);
                       const isEditing = el.id === editingTextId;
                       const previewEntrance =
                         animPreview && animPreview.id === el.id && animPreview.anim !== "none"
@@ -2149,13 +2640,116 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
             </Section>
           )}
 
+          {page && selectedIds.length > 0 && (
+            <Section title={selectedIds.length > 1 ? "Align Elements" : "Align on Page"} defaultOpen>
+              {selectedIds.length > 1 && (
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => alignSelected('left')}
+                    className="w-full text-xs border rounded-md py-1.5 border-hairline hover:border-ink-soft flex items-center justify-center bg-paper shadow-sm"
+                    title="Align Left"
+                  >
+                    <span className="text-lg">⇤</span>
+                  </button>
+                  <button
+                    onClick={() => alignSelected('center')}
+                    className="w-full text-xs border rounded-md py-1.5 border-hairline hover:border-ink-soft flex items-center justify-center bg-paper shadow-sm"
+                    title="Align Center"
+                  >
+                    <span className="text-lg">⇹</span>
+                  </button>
+                  <button
+                    onClick={() => alignSelected('right')}
+                    className="w-full text-xs border rounded-md py-1.5 border-hairline hover:border-ink-soft flex items-center justify-center bg-paper shadow-sm"
+                    title="Align Right"
+                  >
+                    <span className="text-lg">⇥</span>
+                  </button>
+                  <button
+                    onClick={() => alignSelected('top')}
+                    className="w-full text-xs border rounded-md py-1.5 border-hairline hover:border-ink-soft flex items-center justify-center bg-paper shadow-sm"
+                    title="Align Top"
+                  >
+                    <span className="text-lg">⇡</span>
+                  </button>
+                  <button
+                    onClick={() => alignSelected('middle')}
+                    className="w-full text-xs border rounded-md py-1.5 border-hairline hover:border-ink-soft flex items-center justify-center bg-paper shadow-sm"
+                    title="Align Middle"
+                  >
+                    <span className="text-lg">⇕</span>
+                  </button>
+                  <button
+                    onClick={() => alignSelected('bottom')}
+                    className="w-full text-xs border rounded-md py-1.5 border-hairline hover:border-ink-soft flex items-center justify-center bg-paper shadow-sm"
+                    title="Align Bottom"
+                  >
+                    <span className="text-lg">⇣</span>
+                  </button>
+                  {selectedIds.length > 2 && (
+                    <>
+                      <button
+                        onClick={() => alignSelected('distribute-h')}
+                        className="w-full text-xs border rounded-md py-1.5 border-hairline hover:border-ink-soft flex items-center justify-center bg-paper shadow-sm col-span-3"
+                        title="Distribute Horizontally"
+                      >
+                        <span className="text-sm font-medium">Distribute Horizontally</span>
+                      </button>
+                      <button
+                        onClick={() => alignSelected('distribute-v')}
+                        className="w-full text-xs border rounded-md py-1.5 border-hairline hover:border-ink-soft flex items-center justify-center bg-paper shadow-sm col-span-3"
+                        title="Distribute Vertically"
+                      >
+                        <span className="text-sm font-medium">Distribute Vertically</span>
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => alignSelected('level')}
+                    className="w-full text-xs border rounded-md py-1.5 border-hairline hover:border-ink-soft flex items-center justify-center bg-paper shadow-sm col-span-3"
+                    title="Level (0° Rotation)"
+                  >
+                    <span className="text-sm font-medium">Level Rotation</span>
+                  </button>
+                </div>
+              )}
+              
+              <div className={`grid grid-cols-2 gap-2 ${selectedIds.length > 1 ? 'mt-2 pt-2 border-t border-hairline' : ''}`}>
+                <button
+                  onClick={() => alignSelected('center-page-h')}
+                  className="w-full text-xs border rounded-md py-1.5 border-hairline hover:border-ink-soft flex items-center justify-center bg-paper shadow-sm"
+                  title="Center Horizontally on Page"
+                >
+                  <span className="text-sm font-medium">Center Page H</span>
+                </button>
+                <button
+                  onClick={() => alignSelected('center-page-v')}
+                  className="w-full text-xs border rounded-md py-1.5 border-hairline hover:border-ink-soft flex items-center justify-center bg-paper shadow-sm"
+                  title="Center Vertically on Page"
+                >
+                  <span className="text-sm font-medium">Center Page V</span>
+                </button>
+              </div>
+            </Section>
+          )}
+
           {page && selected && (
             <>
               <Section title="Style" defaultOpen>
                 {selected.type === "text" && (
                   <>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs text-ink-soft min-w-[3.5rem]">Color</span>
+                      <ColorChip
+                        title="Text color"
+                        value={selected.color}
+                        suggestions={TEXT_COLORS}
+                        onChange={(c) => setText(selected.id, { color: c })}
+                        allowGradient
+                      />
+                    </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-ink-soft">Highlight</span>
+                      <span className="text-xs text-ink-soft min-w-[3.5rem]">Highlight</span>
                       <ColorChip
                         title="Highlight color"
                         value={selected.bg}
@@ -2177,8 +2771,8 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                         </select>
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-ink-soft">Shadow</span>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className="text-xs text-ink-soft min-w-[3.5rem]">Shadow</span>
                       <button
                         onClick={() => setText(selected.id, { shadow: !selected.shadow })}
                         className={tb(!!selected.shadow)}
@@ -2246,6 +2840,64 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                         )}
                       </>
                     )}
+                    <div className="mt-4 pt-4 border-t border-hairline">
+                      <h4 className="text-xs font-semibold mb-2 uppercase tracking-wide text-ink-soft">Interactive Audio</h4>
+                      {!selected.audioSrc ? (
+                        <button
+                          onClick={() => {
+                            const input = document.createElement("input");
+                            input.type = "file";
+                            input.accept = "audio/*";
+                            input.onchange = async (e) => {
+                              const files = (e.target as HTMLInputElement).files;
+                              if (files?.length) {
+                                const fd = new FormData();
+                                fd.append("file", files[0]);
+                                const res = await fetch("/api/images", { method: "POST", body: fd });
+                                if (res.ok) {
+                                  const json = await res.json();
+                                  setPhoto(selected.id, { audioSrc: `/api/images/${json.id}` });
+                                }
+                              }
+                            };
+                            input.click();
+                          }}
+                          className="w-full text-xs bg-accent text-paper py-1.5 rounded-md flex items-center justify-center gap-1 shadow-sm hover:bg-[#a4636e]"
+                        >
+                          <UploadCloudIcon size={14} /> Attach Audio
+                        </button>
+                      ) : (
+                        <>
+                          <div className="flex gap-1 mb-2">
+                            <span className="text-xs text-ink bg-paper border border-hairline px-2 py-1 rounded-md flex-1 truncate">Audio Attached</span>
+                            <button
+                              onClick={() => setPhoto(selected.id, { audioSrc: undefined, audioStartTime: undefined, audioEndTime: undefined })}
+                              className="text-xs text-red-500 hover:text-red-700 bg-red-50 px-2 rounded-md"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <Field label="Trim (seconds)">
+                            <div className="flex gap-2">
+                              <input
+                                type="number"
+                                placeholder="Start"
+                                value={selected.audioStartTime ?? ""}
+                                onChange={(e) => setPhoto(selected.id, { audioStartTime: e.target.value ? parseFloat(e.target.value) : undefined })}
+                                className="w-1/2 bg-transparent text-xs text-ink placeholder-ink-soft focus:outline-none px-2 py-1 border-b border-hairline"
+                              />
+                              <input
+                                type="number"
+                                placeholder="End"
+                                value={selected.audioEndTime ?? ""}
+                                onChange={(e) => setPhoto(selected.id, { audioEndTime: e.target.value ? parseFloat(e.target.value) : undefined })}
+                                className="w-1/2 bg-transparent text-xs text-ink placeholder-ink-soft focus:outline-none px-2 py-1 border-b border-hairline"
+                              />
+                            </div>
+                          </Field>
+                        </>
+                      )}
+                    </div>
                   </>
                 )}
 
@@ -2259,6 +2911,24 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                         className={`${inputCls} min-h-[100px] py-2`}
                       />
                     </Field>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs text-ink-soft w-16">Envelope</span>
+                      <ColorChip
+                        title="Envelope color"
+                        value={selected.envelopeColor ?? "#b76e79"}
+                        suggestions={["#b76e79", "#8ba9b0", "#a59d8c", "#cbbca3"]}
+                        onChange={(c) => setEnvelope(selected.id, { envelopeColor: c })}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 mb-4">
+                      <span className="text-xs text-ink-soft w-16">Card</span>
+                      <ColorChip
+                        title="Card back color"
+                        value={selected.cardBackColor ?? "#f0f0f0"}
+                        suggestions={["#ffffff", "#f0f0f0", "#ffebe5", "#e5f0ff"]}
+                        onChange={(c) => setEnvelope(selected.id, { cardBackColor: c })}
+                      />
+                    </div>
                     <Field label="Hidden Picture (Optional)">
                       <input
                         type="file"
@@ -2289,25 +2959,16 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                         </div>
                       )}
                     </Field>
-                    <div className="flex items-center gap-2 mt-4">
-                      <span className="text-xs text-ink-soft">Card Back Color</span>
-                      <ColorChip
-                        title="Card Back Color"
-                        value={selected.cardBackColor ?? "#ffffff"}
-                        suggestions={["#ffffff", "#fdf9f4", "#fbf3f2", "#f4f6f3", "#f3f5f8", "#fff8ec"]}
-                        onChange={(c) => setEnvelope(selected.id, { cardBackColor: c })}
-                      />
-                    </div>
                   </>
                 )}
 
                 {selected.type === "map" && (
                   <>
-                    <Field label="Map Location">
+                    <Field label="Search Location">
                       <input
                         value={selected.query}
                         onChange={(e) => setMap(selected.id, { query: e.target.value })}
-                        placeholder="Eiffel Tower, Paris"
+                        placeholder="E.g., Central Park"
                         className={inputCls}
                       />
                     </Field>
@@ -2342,10 +3003,34 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                     </button>
                     <button
                       onClick={() => setAudio(selected.id, { loop: !selected.loop })}
-                      className={`w-full text-xs border rounded-md py-1.5 ${selected.loop ? "border-accent text-accent" : "border-hairline hover:border-ink-soft"}`}
+                      className={`w-full text-xs border rounded-md py-1.5 mb-2 ${selected.loop ? "border-accent text-accent" : "border-hairline hover:border-ink-soft"}`}
                     >
                       Loop audio
                     </button>
+                    <button
+                      onClick={() => setAudio(selected.id, { invisible: !selected.invisible })}
+                      className={`w-full text-xs border rounded-md py-1.5 mb-4 ${selected.invisible ? "border-accent text-accent" : "border-hairline hover:border-ink-soft"}`}
+                    >
+                      Invisible (Background music)
+                    </button>
+                    <Field label="Trim (seconds)">
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          placeholder="Start"
+                          value={selected.startTime ?? ""}
+                          onChange={(e) => setAudio(selected.id, { startTime: e.target.value ? parseFloat(e.target.value) : undefined })}
+                          className="w-1/2 bg-transparent text-xs text-ink placeholder-ink-soft focus:outline-none px-2 py-1 border-b border-hairline"
+                        />
+                        <input
+                          type="number"
+                          placeholder="End"
+                          value={selected.endTime ?? ""}
+                          onChange={(e) => setAudio(selected.id, { endTime: e.target.value ? parseFloat(e.target.value) : undefined })}
+                          className="w-1/2 bg-transparent text-xs text-ink placeholder-ink-soft focus:outline-none px-2 py-1 border-b border-hairline"
+                        />
+                      </div>
+                    </Field>
                   </>
                 )}
 
@@ -2683,6 +3368,14 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                     >
                       <VideoIcon size={20} />
                       Video
+                    </button>
+                    {/* Audio */}
+                    <button
+                      onClick={() => { audioInput.current?.click(); setFabOpen(false); }}
+                      className="flex flex-col items-center gap-1.5 py-3 rounded-xl border border-hairline text-xs hover:border-accent hover:text-accent transition-colors"
+                    >
+                      <PlayIcon size={20} />
+                      Audio
                     </button>
                     {/* Text */}
                     <button
@@ -3121,12 +3814,12 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
               left: Math.min(contextMenu.x, window.innerWidth - 200) 
             }}
           >
-            {contextMenu.elId && selected ? (
+            {contextMenu.elId && selectedIds.length > 0 ? (
               <>
                 <div className="px-3 py-1 mb-1 label-caps border-b border-hairline pb-2">
-                  Edit {selected.type}
+                  Edit {selectedIds.length > 1 ? "Selection" : selected?.type}
                 </div>
-                {(selected.type === "photo" || selected.type === "video" || (selected.type === "shape" && selected.src)) && (
+                {selectedIds.length === 1 && selected && (selected.type === "photo" || selected.type === "video" || (selected.type === "shape" && selected.src)) && (
                   <button 
                     onClick={() => { setAdjustingId(selected.id); setContextMenu(null); }}
                     className="w-full text-left px-4 py-1.5 hover:bg-accent-soft hover:text-accent flex items-center justify-between"
@@ -3147,6 +3840,37 @@ export default function Editor({ initialPages }: { initialPages: Page[] }) {
                   Send Backward
                 </button>
                 <div className="my-1 border-t border-hairline" />
+                
+                {selectedIds.length > 1 && (
+                  <button 
+                    onClick={() => { 
+                      const groupId = nanoid(8);
+                      mutateData((d) => ({
+                        ...d,
+                        elements: d.elements.map(el => selectedIds.includes(el.id) ? { ...el, groupId } : el)
+                      }));
+                      setContextMenu(null); 
+                    }}
+                    className="w-full text-left px-4 py-1.5 hover:bg-accent-soft hover:text-accent flex items-center justify-between"
+                  >
+                    Group <span>Ctrl+G</span>
+                  </button>
+                )}
+                {selectedIds.some(id => page?.data.elements.find(e => e.id === id)?.groupId) && (
+                  <button 
+                    onClick={() => { 
+                      mutateData((d) => ({
+                        ...d,
+                        elements: d.elements.map(el => selectedIds.includes(el.id) ? { ...el, groupId: undefined } : el)
+                      }));
+                      setContextMenu(null); 
+                    }}
+                    className="w-full text-left px-4 py-1.5 hover:bg-accent-soft hover:text-accent flex items-center justify-between"
+                  >
+                    Ungroup <span>Ctrl+Shift+G</span>
+                  </button>
+                )}
+
                 <button 
                   onClick={() => { duplicateSelected(); setContextMenu(null); }}
                   className="w-full text-left px-4 py-1.5 hover:bg-accent-soft hover:text-accent"

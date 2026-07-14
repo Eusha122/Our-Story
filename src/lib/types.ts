@@ -30,7 +30,7 @@ export const TRANSITIONS: { value: Transition; label: string }[] = [
 ];
 
 /** PowerPoint-style entrance animation for a single element. */
-export type EntranceAnim = "none" | "fade" | "rise" | "drop" | "zoom" | "pop" | "swing" | "blur" | "typewriter" | "typewriter-loop";
+export type EntranceAnim = "none" | "fade" | "rise" | "drop" | "zoom" | "pop" | "swing" | "blur" | "typewriter" | "typewriter-loop" | "slide-left" | "slide-right";
 
 export const ANIMS: { value: EntranceAnim; label: string }[] = [
   { value: "none", label: "None" },
@@ -43,6 +43,8 @@ export const ANIMS: { value: EntranceAnim; label: string }[] = [
   { value: "blur", label: "Blur in" },
   { value: "typewriter", label: "Typewriter" },
   { value: "typewriter-loop", label: "Typewriter (Looping)" },
+  { value: "slide-left", label: "Slide from Left" },
+  { value: "slide-right", label: "Slide from Right" },
 ];
 
 export interface ElementBase {
@@ -63,6 +65,8 @@ export interface ElementBase {
   animDelay?: number;
   /** Duration of the animation in seconds; undefined = default (usually 1s). */
   animDuration?: number;
+  /** Optional group ID for multi-select grouping */
+  groupId?: string;
 }
 
 export type PhotoFrame = "polaroid" | "plain" | "rounded" | "circle";
@@ -95,14 +99,22 @@ export interface PhotoElement extends ElementBase {
   borderColor?: string;
   /** Scratch-off surprise effect */
   scratchOff?: boolean;
+  /** Interactive Audio */
+  audioSrc?: string;
+  audioStartTime?: number;
+  audioEndTime?: number;
 }
 
-export type ShapeKind = "rect" | "circle" | "heart" | "line" | "tape";
+export type ShapeKind = "rect" | "circle" | "heart" | "line" | "tape" | "star" | "flower" | "sparkle" | "cloud";
 
 export const SHAPES: { value: ShapeKind; label: string }[] = [
   { value: "rect", label: "Rectangle" },
   { value: "circle", label: "Circle" },
   { value: "heart", label: "Heart" },
+  { value: "star", label: "Star" },
+  { value: "flower", label: "Flower" },
+  { value: "sparkle", label: "Sparkle" },
+  { value: "cloud", label: "Cloud" },
   { value: "line", label: "Line" },
   { value: "tape", label: "Tape" },
 ];
@@ -118,7 +130,7 @@ export interface ShapeElement extends ElementBase {
   src?: string;
 }
 
-export type TextFont = "serif" | "elegant" | "sans" | "script" | "dancing" | "hand" | "type";
+export type TextFont = "serif" | "elegant" | "sans" | "script" | "dancing" | "hand" | "type" | "pacifico" | "montserrat" | "lora" | "bebas";
 
 export const FONTS: { value: TextFont; label: string }[] = [
   { value: "serif", label: "Serif" },
@@ -128,6 +140,10 @@ export const FONTS: { value: TextFont; label: string }[] = [
   { value: "dancing", label: "Dancing" },
   { value: "hand", label: "Handwritten" },
   { value: "type", label: "Typewriter" },
+  { value: "pacifico", label: "Pacifico" },
+  { value: "montserrat", label: "Montserrat" },
+  { value: "lora", label: "Lora" },
+  { value: "bebas", label: "Bebas Neue" },
 ];
 
 export type HighlightStyle = "square" | "rounded" | "pill" | "ellipse" | "marker";
@@ -188,6 +204,9 @@ export interface AudioElement extends ElementBase {
   src: string;
   autoplay?: boolean;
   loop?: boolean;
+  invisible?: boolean;
+  startTime?: number;
+  endTime?: number;
 }
 
 export interface EnvelopeElement extends ElementBase {
