@@ -270,7 +270,10 @@ function CustomVideoPlayer({
   }
 
   const baseClasses = "w-20 h-20 flex items-center justify-center rounded-full transition-all duration-300 pointer-events-auto hover:scale-105 active:scale-95";
-  const visibilityClasses = isPlaying && !hover ? "opacity-0 scale-90" : "opacity-100 scale-100";
+  // Dim slightly while playing so it doesn't dominate the frame, but never
+  // fully hide it — touch devices have no hover state, so a hide-until-hover
+  // button would be permanently unreachable once a video starts autoplaying.
+  const visibilityClasses = isPlaying && !hover ? "opacity-70 scale-90" : "opacity-100 scale-100";
 
   return (
     <div 
